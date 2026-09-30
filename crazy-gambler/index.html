@@ -63,7 +63,7 @@
 </head>
 <body>
 <div id="app"></div>
-<div class="brand"><b>ANIME JACKPOT</b><span>Crazy Gambler · Hakari-Dance</span></div>
+<div class="brand"><b>ANIME JACKPOT</b><span>Crazy Gambler × Hakari · Halloween Jackpot</span></div>
 <div class="hint">Ziehen = Kamera drehen · Scrollen = Zoom</div>
 <div class="jackpot" id="jackpot">JACKPOT!</div>
 <div class="controls">
@@ -88,7 +88,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 //  Einstellungen
 // ============================================================
 const CONFIG = {
-  bpm: 128,          // Tempo von Tanz und Musik
+  bpm: 130,          // Tempo von Tanz und Musik (Phonk-Tempo)
   bloom: 0.6,        // Stärke des Neon-Leuchtens
   confetti: 320,     // Anzahl Konfetti-Schnipsel
   maxCoins: 220,     // Münzen beim Jackpot
@@ -129,8 +129,8 @@ renderer.toneMappingExposure = 1.05;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#0a0f2c');
-scene.fog = new THREE.Fog('#0a0f2c', 26, 60);
+scene.background = new THREE.Color('#0d0a26');
+scene.fog = new THREE.Fog('#140a2c', 24, 58);
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -187,7 +187,7 @@ scene.add(key);
 const rimPink = new THREE.DirectionalLight('#ff4fd8', 1.6);
 rimPink.position.set(-7, 6, -6);
 scene.add(rimPink);
-const rimCyan = new THREE.DirectionalLight('#3fd6ff', 1.6);
+const rimCyan = new THREE.DirectionalLight('#ff8a2a', 1.6);   // Halloween-Orange
 rimCyan.position.set(7, 6, -6);
 scene.add(rimCyan);
 
@@ -322,11 +322,12 @@ const faceCanvas = makeCanvas(256, 256, (g, w, h) => {
   }
 
   // Augen
-  for (const x of [88, 168]) {
-    g.fillStyle = '#c52b1c'; g.beginPath(); g.arc(x, 110, 11, 0, TAU); g.fill();
-    g.fillStyle = '#ffd23a'; g.beginPath(); g.arc(x, 110, 7.5, 0, TAU); g.fill();
-    g.fillStyle = '#000'; g.beginPath(); g.arc(x, 110, 3.5, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.beginPath(); g.arc(x - 3, 106, 2, 0, TAU); g.fill();
+  for (const [x, tilt] of [[88, 0.22], [168, -0.22]]) {
+    g.save(); g.translate(x, 110); g.rotate(tilt);
+    g.fillStyle = '#f4f0e0'; g.beginPath(); g.ellipse(0, 0, 17, 7, 0, 0, TAU); g.fill();
+    g.fillStyle = '#d8a018'; g.beginPath(); g.arc(0, 0, 6.5, 0, TAU); g.fill();
+    g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 0, 2, 5, 0, 0, TAU); g.fill();
+    g.restore();
   }
 
   // Böse Augenbrauen
@@ -363,6 +364,19 @@ const faceCanvas = makeCanvas(256, 256, (g, w, h) => {
   g.beginPath(); g.moveTo(...L); g.quadraticCurveTo(...upC, ...R); g.stroke();
   g.beginPath(); g.moveTo(...L); g.quadraticCurveTo(...loC, ...R); g.stroke();
 
+  // Hakaris Schnurrbart (dünn, dunkelblond) direkt über dem Grinsen
+  g.fillStyle = '#6b4410';
+  g.beginPath();
+  g.moveTo(128, 145); g.quadraticCurveTo(92, 138, 56, 160); g.quadraticCurveTo(94, 150, 128, 154);
+  g.quadraticCurveTo(162, 150, 200, 160); g.quadraticCurveTo(164, 138, 128, 145);
+  g.fill();
+
+  // Blonder Haaransatz oben
+  g.fillStyle = '#e8b030'; g.fillRect(0, 0, w, 12);
+  g.beginPath(); g.moveTo(0, 12);
+  for (let x = 0; x <= w; x += 32) { g.lineTo(x + 16, 26); g.lineTo(x + 32, 12); }
+  g.fill();
+
   // Lachfalten
   g.strokeStyle = 'rgba(60, 30, 30, 0.55)'; g.lineWidth = 3;
   g.beginPath(); g.moveTo(34, 150); g.quadraticCurveTo(22, 128, 36, 110); g.stroke();
@@ -375,6 +389,8 @@ const headSide = makeCanvas(64, 64, (g, w, h) => {
   const gr = g.createLinearGradient(0, 0, w, 0);
   gr.addColorStop(0, '#cfc5b8'); gr.addColorStop(0.5, '#e6ded3'); gr.addColorStop(1, '#cfc5b8');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#a07a3a'; g.fillRect(0, 0, w, h * 0.45);          // kurz rasierter Undercut
+  noise(g, w, h * 0.45, 'rgba(60, 40, 10, 0.5)', 220, 1.5);
 });
 
 // --- Oberkörper mit Spielautomat ---
@@ -562,12 +578,28 @@ const skinFace = makeCanvas(64, 64, (g, w, h) => {
   noise(g, w, h, 'rgba(150, 90, 60, 0.12)', 120);
 });
 
-const tattooArm = makeCanvas(128, 122, (g, w, h) => {
-  g.fillStyle = SKIN; g.fillRect(0, 0, w, h);
-  drawCard(g, 42, 64, 40, 58, -0.35, 'A', '♠');
-  drawCard(g, 66, 58, 40, 58, 0, 'K', '♣');
-  drawCard(g, 90, 64, 40, 58, 0.35, '5', '♥');
+// Ärmel der Jacke und Hände mit goldenen Ringen
+const JACKET = '#1b1d2b';
+const jacketCanvas = makeCanvas(64, 64, (g, w, h) => {
+  g.fillStyle = JACKET; g.fillRect(0, 0, w, h);
+  noise(g, w, h, 'rgba(255,255,255,0.05)', 160);
 });
+function sleeveHand(rings) {
+  return makeCanvas(128, 128, (g, w, h) => {
+    g.fillStyle = JACKET; g.fillRect(0, 0, w, 72);
+    noise(g, w, 72, 'rgba(255,255,255,0.05)', 120);
+    g.fillStyle = '#6d2a91'; g.fillRect(0, 66, w, 8);             // lila Futter am Ärmelsaum
+    g.fillStyle = SKIN; g.fillRect(0, 74, w, h - 74);
+    if (rings) {
+      for (const x of [26, 52, 78, 104]) {
+        g.fillStyle = '#f2c23a'; g.fillRect(x - 9, 104, 18, 7);
+        g.fillStyle = '#fff3b0'; g.fillRect(x - 7, 105, 6, 2);
+      }
+    }
+  });
+}
+const sleeveRings = sleeveHand(true);
+const sleevePlain = sleeveHand(false);
 
 // --- Hose ---
 function pants(w, h, extra) {
@@ -614,11 +646,7 @@ const cuffB = makeCanvas(128, 32, (g, w, h) => {
   for (let x = 0; x < w; x += 16) { g.fillStyle = (x / 16) % 2 ? '#e3262c' : '#ffd21e'; g.fillRect(x, 0, 16, h); }
 });
 
-// --- Partyhut, Chips, Roulette, Münzen ---
-const hatCanvas = makeCanvas(256, 64, (g, w, h) => {
-  const cols = ['#ee2b2b', '#ffd21e', '#3cc24a', '#2b8fe3', '#8b3fd9', '#ff7a1a'];
-  for (let i = 0; i < 12; i++) { g.fillStyle = cols[i % cols.length]; g.fillRect((i * w) / 12, 0, w / 12 + 1, h); }
-});
+// --- Chips, Roulette, Münzen ---
 
 function chipCanvas(color) {
   return makeCanvas(128, 128, (g) => {
@@ -706,38 +734,56 @@ const torsoMat = new THREE.MeshStandardMaterial({
 });
 put(chest, block(2, 1.8, 1, { pz: torsoMat, nz: torsoBack, all: skinFace, ny: pantsPlain }), 0, 0.9, 0);
 
+// --- Offene Jujutsu-Uniformjacke (Hakari trägt sie offen, ohne Hemd) ---
+const jacketMat = material(jacketCanvas, { roughness: 0.8 });
+const liningMat = material('#6d2a91', { roughness: 0.7 });
+const buttonMat = material('#f2c23a', { metalness: 0.8, roughness: 0.3, envMapIntensity: 1 });
+put(chest, block(2.1, 1.98, 0.08, { all: jacketMat, pz: liningMat }), 0, 0.86, -0.54);            // Rücken
+for (const sx of [-1, 1]) {
+  put(chest, block(0.05, 1.98, 1.08, { all: jacketMat, [sx > 0 ? 'nx' : 'px']: liningMat }), sx * 1.03, 0.86, 0);   // Seite
+  put(chest, block(0.34, 0.06, 1.1, { all: jacketMat }), sx * 0.88, 1.82, 0);                       // Schulter
+  const flap = block(0.3, 1.98, 0.07, { all: jacketMat, nz: liningMat });                        // offenes Vorderteil
+  flap.rotation.y = sx * 0.42;
+  put(chest, flap, sx * 0.93, 0.86, 0.57);
+  for (let k = 0; k < 4; k++) {                                                                 // goldene Knöpfe
+    const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 16), buttonMat);
+    btn.rotation.x = Math.PI / 2;
+    put(flap, btn, -sx * 0.06, 0.6 - k * 0.42, 0.05);
+  }
+  const side = block(0.07, 0.5, 0.75, { all: jacketMat, [sx > 0 ? 'nx' : 'px']: liningMat });     // Stehkragen
+  side.rotation.y = sx * 0.25;
+  put(chest, side, sx * 0.72, 2.02, -0.14);
+}
+const collarBack = block(1.5, 0.52, 0.07, { all: jacketMat, pz: liningMat });
+collarBack.rotation.x = -0.12;
+put(chest, collarBack, 0, 2.02, -0.5);
+
 // --- Kopf ---
 const neck = put(chest, new THREE.Group(), 0, 1.8, 0);
-put(neck, block(1.3, 1.3, 1.2, { pz: faceCanvas, px: headSide, nx: headSide, py: '#e24dbd', nz: '#e24dbd', ny: '#d9d0c4' }), 0, 0.7, 0);
+put(neck, block(1.3, 1.3, 1.2, { pz: faceCanvas, px: headSide, nx: headSide, py: '#e8b030', nz: headSide, ny: '#d9d0c4' }), 0, 0.7, 0);
 
 const nose = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 16), material('#e8141e', { roughness: 0.25 }));
 nose.castShadow = true;
 put(neck, nose, 0, 0.66, 0.64);
 
-// Pinke Clownshaare aus vielen Büscheln
-const hairColors = ['#ff4fcf', '#e838b8', '#ff7ae0', '#c42aa8', '#ff5aa8', '#b84bdb'].map((c) => material(c, { roughness: 0.8 }));
-const hairRand = rng(7);
-const hairGeo = new THREE.IcosahedronGeometry(1, 1);
-const spikeGeo = new THREE.ConeGeometry(0.12, 0.5, 8);
+// Hakari-Frisur: gebleicht-blonde Stacheln, nach oben und hinten gestylt – mit blutroten Clown-Strähnen
+const hairColors = ['#f7c948', '#e8b030', '#ffd966', '#d99a1c', '#f2b93a'].map((c) => material(c, { roughness: 0.7 }));
+const hairAccent = material('#c8102e', { roughness: 0.6 });
+const hairRand = rng(11);
 const up = new THREE.Vector3(0, 1, 0);
-for (let i = 0; i < 150; i++) {
-  const theta = hairRand() * TAU;
-  const phi = Math.acos(1 - hairRand() * 1.35);   // eher oben
-  const dir = new THREE.Vector3(Math.sin(phi) * Math.sin(theta), Math.cos(phi), Math.sin(phi) * Math.cos(theta));
-  const pos = dir.clone().multiply(new THREE.Vector3(0.78, 0.62, 0.72)).add(new THREE.Vector3(0, 0.95, -0.05));
-  const inFace = pos.z > 0.2 && pos.y < 1.3 && Math.abs(pos.x) < 0.58;
-  if (inFace) continue;
-  const spike = i % 4 === 0;
-  const m = new THREE.Mesh(spike ? spikeGeo : hairGeo, hairColors[i % hairColors.length]);
-  if (spike) {
-    m.quaternion.setFromUnitVectors(up, dir);
-    m.position.copy(pos).addScaledVector(dir, 0.18);
-  } else {
-    const s = 0.2 + hairRand() * 0.16;
-    m.scale.set(s, s * 1.1, s);
-    m.rotation.set(hairRand() * 3, hairRand() * 3, hairRand() * 3);
-    m.position.copy(pos);
-  }
+put(neck, block(1.34, 0.22, 1.24, { all: '#e8b030' }), 0, 1.4, -0.02);
+for (let i = 0; i < 64; i++) {
+  const back = i >= 50;                                   // die letzten Stacheln zeigen nach hinten
+  const x = (hairRand() - 0.5) * 1.25;
+  const z = back ? -0.6 : -0.5 + hairRand() * 1.0;
+  const y = back ? 0.95 + hairRand() * 0.45 : 1.48;
+  const dir = back
+    ? new THREE.Vector3(x * 0.4, 0.35 + hairRand() * 0.3, -1).normalize()
+    : new THREE.Vector3(x * 0.7 + (hairRand() - 0.5) * 0.3, 1.2, -0.35 - (0.5 - z) * 0.35).normalize();
+  const len = 0.4 + hairRand() * 0.45 + (z > 0.2 && !back ? 0.25 : 0);   // vorne höher (Tolle)
+  const m = new THREE.Mesh(new THREE.ConeGeometry(0.13 + hairRand() * 0.08, len, 6), i % 7 === 3 ? hairAccent : hairColors[i % hairColors.length]);
+  m.quaternion.setFromUnitVectors(up, dir);
+  m.position.set(x, y, z).addScaledVector(dir, len * 0.38);
   m.castShadow = true;
   neck.add(m);
 }
@@ -747,26 +793,17 @@ const hornMat = material('#d6ae84', { roughness: 0.5 });
 for (const sx of [-1, 1]) {
   const horn = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.75, 12), hornMat);
   horn.castShadow = true;
-  horn.rotation.set(-0.15, 0, -sx * 0.55);
-  put(neck, horn, sx * 0.62, 1.52, 0.18);
+  horn.rotation.set(-0.15, 0, -sx * 0.6);
+  horn.scale.setScalar(1.25);
+  put(neck, horn, sx * 0.72, 1.7, 0.15);
 }
-
-// Partyhut
-const hat = new THREE.Group();
-const hatCone = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.72, 24, 1, true), material(hatCanvas, { side: THREE.DoubleSide }));
-hatCone.castShadow = true;
-hat.add(hatCone);
-put(hat, new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), material('#ffd21e')), 0, 0.38, 0);
-hat.rotation.set(0.1, 0, -0.42);
-put(neck, hat, 0.42, 1.78, 0.05);
 
 // --- Arme ---
 function makeArm(side) {
   const shoulder = put(chest, new THREE.Group(), side * 1.5, 1.55, 0);
-  const upperFaces = side > 0 ? { all: skinFace, pz: tattooArm, px: tattooArm } : { all: skinFace };
-  put(shoulder, block(1, 0.95, 1, upperFaces), 0, -0.225, 0);
+  put(shoulder, block(1.04, 0.97, 1.04, { all: jacketMat }), 0, -0.225, 0);
   const elbow = put(shoulder, new THREE.Group(), 0, -0.7, 0);
-  put(elbow, block(0.96, 1.0, 0.96, { all: skinFace }), 0, -0.5, 0);
+  put(elbow, block(0.98, 1.0, 0.98, { all: sleevePlain, pz: sleeveRings, nz: sleeveRings, py: jacketMat, ny: skinFace }), 0, -0.5, 0);
   return { shoulder, elbow };
 }
 const armR = makeArm(-1);   // rechter Arm des Charakters (vom Betrachter links)
@@ -978,6 +1015,70 @@ const signMat = new THREE.MeshBasicMaterial({ map: texture(signCanvas), transpar
 const sign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.4), signMat);
 put(scene, sign, 0, 8.3, -8.6);
 
+// Geschnitzte Kürbisse mit flackerndem Licht
+const pumpkinSkin = makeCanvas(256, 128, (g, w, h) => {
+  g.fillStyle = '#f07a12'; g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 32) {
+    const gr = g.createLinearGradient(x, 0, x + 32, 0);
+    gr.addColorStop(0, 'rgba(120, 40, 0, 0.45)'); gr.addColorStop(0.5, 'rgba(255, 170, 60, 0.15)'); gr.addColorStop(1, 'rgba(120, 40, 0, 0.45)');
+    g.fillStyle = gr; g.fillRect(x, 0, 32, h);
+  }
+});
+const pumpkinFace = makeCanvas(128, 128, (g) => {
+  g.fillStyle = '#ffd24a';
+  g.beginPath(); g.moveTo(26, 52); g.lineTo(46, 26); g.lineTo(56, 54); g.fill();
+  g.beginPath(); g.moveTo(102, 52); g.lineTo(82, 26); g.lineTo(72, 54); g.fill();
+  g.beginPath(); g.moveTo(58, 70); g.lineTo(64, 58); g.lineTo(70, 70); g.fill();
+  g.beginPath(); g.moveTo(18, 80);
+  for (let x = 18; x <= 110; x += 13) g.lineTo(x + 6, x % 26 ? 98 : 88);
+  g.lineTo(110, 80); g.quadraticCurveTo(64, 120, 18, 80); g.fill();
+});
+const pumpkinSkinMat = material(pumpkinSkin, { roughness: 0.55 });
+const pumpkinFaceTex = texture(pumpkinFace);
+const pumpkinFaces = [];
+function makePumpkin(x, z, s, turn) {
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 28, 18), pumpkinSkinMat);
+  body.scale.set(1.15, 0.85, 1.1);
+  body.castShadow = true;
+  put(grp, body, 0, 0.5, 0);
+  put(grp, new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.3, 8), material('#4a6a1c')), 0, 1.08, 0);
+  const faceMat = new THREE.MeshBasicMaterial({ map: pumpkinFaceTex, transparent: true, depthWrite: false });
+  pumpkinFaces.push(faceMat);
+  put(grp, new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), faceMat), 0, 0.48, 0.67);
+  grp.scale.setScalar(s);
+  grp.rotation.y = turn;
+  put(scene, grp, x, 0, z);
+}
+makePumpkin(-4.6, 1.6, 1.1, 0.35);
+makePumpkin(4.9, 1.2, 1.25, -0.35);
+makePumpkin(-3.3, -2.6, 0.8, 0.2);
+makePumpkin(6.4, -3.6, 0.9, -0.2);
+makePumpkin(-7.2, -4, 1, 0.3);
+const pumpkinLight = new THREE.PointLight('#ff8a1a', 6, 9, 1.5);
+put(scene, pumpkinLight, 0, 1.2, 2.5);
+
+// Fledermäuse kreisen über der Bühne
+const batTex = texture(makeCanvas(128, 64, (g) => {
+  g.fillStyle = '#1a0a24';
+  g.beginPath(); g.ellipse(64, 34, 8, 14, 0, 0, TAU); g.fill();
+  for (const sx of [-1, 1]) {
+    g.beginPath(); g.moveTo(64, 28);
+    g.quadraticCurveTo(64 + sx * 30, 6, 64 + sx * 62, 14);
+    g.quadraticCurveTo(64 + sx * 52, 26, 64 + sx * 48, 42);
+    g.quadraticCurveTo(64 + sx * 40, 32, 64 + sx * 30, 44);
+    g.quadraticCurveTo(64 + sx * 22, 34, 64 + sx * 10, 44);
+    g.closePath(); g.fill();
+  }
+  g.fillStyle = '#ff3b3b'; g.fillRect(59, 26, 3, 3); g.fillRect(66, 26, 3, 3);
+}));
+const bats = [];
+for (let i = 0; i < 9; i++) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.55), new THREE.MeshBasicMaterial({ map: batTex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  scene.add(m);
+  bats.push({ m, r: 4 + Math.random() * 6, h: 6.5 + Math.random() * 4, speed: (0.25 + Math.random() * 0.35) * (i % 2 ? 1 : -1), a: Math.random() * TAU, flap: Math.random() * TAU });
+}
+
 // Leuchtende Bodenplatte links hinten
 const pad = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 1.7), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.3, 0.2) }));
 put(scene, pad, -7.2, 0.07, -4);
@@ -1013,7 +1114,7 @@ const confettiMesh = new THREE.InstancedMesh(
   CONFIG.confetti,
 );
 const confetti = [];
-const confettiColors = ['#ff3b5c', '#ffd21e', '#3cd65a', '#2fb8ff', '#b45bff', '#ff8a1a', '#ffffff'].map((c) => new THREE.Color(c));
+const confettiColors = ['#ff7a1a', '#ffd21e', '#8b3fd9', '#3cd65a', '#ff3b5c', '#2fb8ff', '#1a1a1a'].map((c) => new THREE.Color(c));
 for (let i = 0; i < CONFIG.confetti; i++) {
   confetti.push({
     p: new THREE.Vector3((Math.random() - 0.5) * 22, Math.random() * 14, -8 + Math.random() * 15),
@@ -1064,7 +1165,7 @@ scene.add(new THREE.Points(auraGeo, auraMat));
 //  32 Schläge: 16 × Groove · 8 × Twist mit rollenden Händen · 8 × Jackpot
 // ============================================================
 const POSE_KEYS = ['drop', 'x', 'rotX', 'rotY', 'rotZ', 'chestX', 'chestY', 'chestZ', 'headX', 'headY', 'headZ',
-  'rShX', 'rShY', 'rShZ', 'rElX', 'lShX', 'lShY', 'lShZ', 'lElX', 'liftR', 'liftL', 'legY', 'kneeIn'];
+  'rShX', 'rShY', 'rShZ', 'rElX', 'lShX', 'lShY', 'lShZ', 'lElX', 'liftR', 'liftL', 'legY', 'kneeIn', 'spread'];
 function emptyPose() { const p = {}; for (const k of POSE_KEYS) p[k] = 0; return p; }
 function blendPoses(list) {
   const out = emptyPose();
@@ -1073,29 +1174,32 @@ function blendPoses(list) {
 }
 const beatPulse = (b) => 0.5 + 0.5 * Math.cos(TAU * b);   // 1 genau auf dem Schlag
 
-// Groove: Gewicht von Seite zu Seite, federnde Knie, lockere Arme
-function poseGroove(b) {
+// Hakari-Groove: breiter Stand, Hüfte kippt auf jedem Schlag zur anderen Seite, tiefer Bounce,
+// Ellbogen angewinkelt und die Fäuste pumpen im Wechsel. Ab Schlag 8 gehen die Hände hoch auf Kopfhöhe.
+function poseGroove(b, lb) {
   const p = emptyPose();
-  const side = Math.sin((Math.PI * b) / 2);
+  const side = Math.sin(Math.PI * b);              // jeden Schlag die andere Seite
   const pulse = beatPulse(b);
-  p.drop = 0.12 + 0.16 * pulse;
-  p.x = 0.3 * side;
-  p.rotY = 0.2 * Math.sin((Math.PI * b) / 2 + 0.7);
-  p.rotZ = -0.07 * side;
-  p.chestX = 0.05 + 0.06 * pulse;
-  p.chestY = -0.22 * side;
-  p.chestZ = 0.08 * side;
-  p.headX = -0.06 + 0.12 * pulse;
-  p.headY = 0.15 * Math.sin((Math.PI * b) / 2 - 0.5);
-  p.headZ = -0.1 * side;
-  p.rShX = -0.5 - 0.4 * side;
-  p.lShX = -0.5 + 0.4 * side;
-  p.rShZ = -0.18 - 0.1 * pulse;
-  p.lShZ = 0.18 + 0.1 * pulse;
-  p.rElX = -1.3 + 0.35 * Math.sin(TAU * b);
-  p.lElX = -1.3 - 0.35 * Math.sin(TAU * b);
-  p.liftR = 0.4 * Math.max(0, side) ** 3;
-  p.liftL = 0.4 * Math.max(0, -side) ** 3;
+  const high = smoothstep(7.5, 8.5, lb) * (1 - smoothstep(15, 16, lb));
+  p.spread = 0.17;
+  p.drop = 0.16 + 0.22 * pulse;
+  p.x = 0.22 * side;
+  p.rotZ = -0.1 * side;
+  p.rotY = 0.14 * Math.sin((Math.PI * b) / 2);
+  p.chestX = 0.14 + 0.08 * pulse;                  // lässig nach vorn gebeugt
+  p.chestY = -0.16 * side;
+  p.chestZ = 0.1 * side;
+  p.headX = -0.12 + 0.2 * pulse;                   // Kopfnicken auf dem Beat
+  p.headY = -0.12 * side;
+  p.headZ = 0.12 * side;
+  p.rShX = -0.35 - 0.45 * side - 1.05 * high;
+  p.lShX = -0.35 + 0.45 * side - 1.05 * high;
+  p.rShZ = -0.3 - 0.1 * pulse - 0.25 * high;
+  p.lShZ = 0.3 + 0.1 * pulse + 0.25 * high;
+  p.rElX = -1.45 - 0.4 * Math.max(0, side) - 0.3 * high;
+  p.lElX = -1.45 - 0.4 * Math.max(0, -side) - 0.3 * high;
+  p.liftR = 0.28 * Math.max(0, side) ** 2;
+  p.liftL = 0.28 * Math.max(0, -side) ** 2;
   return p;
 }
 
@@ -1161,7 +1265,7 @@ function danceAt(beat) {
   const wJack = smoothstep(23.5, 24.5, lbx) - smoothstep(31.5, 32.5, lbx);
   const wGroove = 1 - wTwist - wJack;
   return blendPoses([
-    [poseGroove(beat), wGroove],
+    [poseGroove(beat, lb), wGroove],
     [poseTwist(beat), wTwist],
     [poseJackpot(beat, lbx - 24), wJack],
   ]);
@@ -1171,7 +1275,7 @@ function danceAt(beat) {
 const crouch = (drop) => Math.acos(clamp(1 - drop / 2, -1, 1));
 
 function applyPose(p) {
-  pelvis.position.set(p.x, HIP_Y - p.drop, 0);
+  pelvis.position.set(p.x, HIP_Y - p.drop - 2 * (1 - Math.cos(p.spread)), 0);   // breiter Stand senkt die Hüfte
   pelvis.rotation.set(p.rotX, p.rotY, p.rotZ);
   chest.rotation.set(p.chestX, p.chestY, p.chestZ);
   neck.rotation.set(p.headX, p.headY, p.headZ);
@@ -1182,9 +1286,9 @@ function applyPose(p) {
 
   const theta = crouch(p.drop);
   const comp = Math.asin(clamp(p.x / 2, -0.5, 0.5)) + p.rotZ;   // Füße bleiben trotz Hüftschwung stehen
-  legR.hip.rotation.set(-theta - p.liftR * 1.1, p.legY, -comp + p.kneeIn);
+  legR.hip.rotation.set(-theta - p.liftR * 1.1, p.legY, -comp + p.kneeIn - p.spread);
   legR.knee.rotation.x = 2 * theta + p.liftR * 2.2;
-  legL.hip.rotation.set(-theta - p.liftL * 1.1, p.legY, -comp + p.kneeIn);
+  legL.hip.rotation.set(-theta - p.liftL * 1.1, p.legY, -comp + p.kneeIn + p.spread);
   legL.knee.rotation.x = 2 * theta + p.liftL * 2.2;
 }
 
@@ -1283,19 +1387,36 @@ function coinSound(t) {
   tone(t + 0.07, 100, 0.3, 'square', 0.05, 8000);
 }
 
-// Akkorde pro Takt (8 Takte): Am F G E Am F | C (Jackpot!) G
-const BASS = [33, 29, 31, 28, 33, 29, 36, 31];
-const CHORDS = [[57, 60, 64], [57, 60, 65], [55, 59, 62], [56, 59, 64], [57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]];
+// Eigener Phonk-Beat im Stil brasilianischer Funk-Phonk-Tracks: Cowbell-Melodie, 808-Bass, Funk-Kick
+function cowbell(t, midi, dur = 0.16, peak = 0.07) {
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = mtof(midi) * 1.6; f.Q.value = 1.2;
+  const g = env(t, peak, 0.002, dur);
+  f.connect(g).connect(leadBus);
+  for (const ratio of [1, 1.48]) {
+    const o = ac.createOscillator(); o.type = 'square'; o.frequency.value = mtof(midi) * ratio;
+    o.connect(f); o.start(t); o.stop(t + dur + 0.05);
+  }
+}
+function bass808(t, midi, dur) {
+  const o = ac.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(mtof(midi + 12), t); o.frequency.exponentialRampToValueAtTime(mtof(midi), t + 0.06);
+  const sat = ac.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(2.5 * x); }
+  sat.curve = curve;
+  o.connect(sat).connect(env(t, 0.3, 0.005, dur)).connect(bus); o.start(t); o.stop(t + dur + 0.05);
+}
+
+const ROOTS = [33, 33, 29, 31, 33, 29, 36, 31];        // 808-Grundtöne pro Takt
+const KICKS = [0, 3, 6, 10, 12];                        // Funk-Kickmuster (16tel)
 const _ = null;
+const RIFF_A = [76, _, 76, _, 79, _, 76, 74, _, 76, _, 71, 72, _, 74, _];
+const RIFF_B = [81, _, 79, _, 76, _, 79, 81, _, 84, _, 83, 81, _, 79, _];
 const MELODY = [
-  [69, _, 72, _, 76, _, 74, 72, _, 69, _, 72, 74, _, 76, _],
-  [77, _, 76, _, 74, _, 72, _, 74, _, 72, 69, _, _, 67, _],
-  [67, _, 71, _, 74, _, 79, _, 77, _, 74, _, 71, _, 74, _],
-  [76, _, 71, _, 68, _, 71, _, 76, 75, 76, _, 80, _, 83, _],
-  [69, _, 72, _, 76, _, 74, 72, _, 69, _, 72, 74, _, 76, _],
-  [65, 69, 72, 77, 69, 72, 77, 81, 72, 77, 81, 84, 77, 81, 84, 89],
-  [84, _, _, 84, 79, _, 84, _, 88, _, _, 86, 84, _, 79, _],
-  [83, _, 79, _, 86, _, 83, _, 91, _, 89, _, 86, _, 83, _],
+  RIFF_A, RIFF_A.map((n) => n && n - 2), RIFF_B, RIFF_A,
+  RIFF_A, [65, 69, 72, 77, 69, 72, 77, 81, 72, 77, 81, 84, 77, 81, 84, 89],
+  [84, 84, _, 84, 91, _, 88, 84, 86, _, 84, _, 91, 89, 88, _],
+  [83, _, 86, 83, 91, _, 89, 86, 88, _, 86, _, 83, _, 79, _],
 ];
 
 function playStep(n, t) {
@@ -1303,18 +1424,13 @@ function playStep(n, t) {
   const bar = Math.floor(lb / 4);
   const step = mod(n, 16);
   const beatInLoop = Math.floor(lb);
+  const breakBeat = beatInLoop === 23;                    // kurze Pause vor dem Jackpot
 
-  if (step % 4 === 0 && beatInLoop !== 23) kick(t);
-  if (step === 4 || step === 12) { noiseHit(t, 'bandpass', 1400, 0.45, 0.15, 0.8); noiseHit(t + 0.012, 'bandpass', 1100, 0.3, 0.12, 0.8); }
-  if (step % 4 === 2) noiseHit(t, 'highpass', 7500, 0.16, 0.1);
-  else if (bar >= 6) noiseHit(t, 'highpass', 9000, 0.06, 0.03);
-  if (step % 2 === 0) tone(t, BASS[bar] + (step % 4 === 2 ? 12 : 0), SPB * 0.42, 'sawtooth', 0.22, 700);
-  if (step % 4 === 2) for (const m of CHORDS[bar]) tone(t, m, SPB * 0.28, 'sawtooth', 0.035, 2400);
+  if (KICKS.includes(step) && !breakBeat) { kick(t); bass808(t, ROOTS[bar], SPB * (step === 12 ? 0.9 : 0.7)); }
+  if (step === 4 || step === 12) { noiseHit(t, 'bandpass', 1500, 0.5, 0.14, 0.8); noiseHit(t + 0.014, 'bandpass', 1100, 0.3, 0.12, 0.8); }
+  noiseHit(t, 'highpass', 8000, step % 2 ? 0.05 : 0.11, 0.03);
   const note = MELODY[bar][step];
-  if (note !== null) {
-    tone(t, note, SPB * 0.5, 'square', 0.055, 3200, leadBus);
-    tone(t, note + 12, SPB * 0.3, 'triangle', 0.035, 6000, leadBus);
-  }
+  if (note !== null && !breakBeat) cowbell(t, note);
   if (lb >= 19 && lb < 24) noiseHit(t, 'bandpass', 3200, 0.12, 0.02, 5);   // Walzen-Rattern
   if (n % (LOOP * 4) === 24 * 4) {                                           // Jackpot!
     noiseHit(t, 'highpass', 4000, 0.35, 1.6);
@@ -1422,6 +1538,14 @@ function update(dt) {
   floorGlow.material.color.set(jackpotGlow > 0.5 ? '#ffd23a' : '#3fd6ff');
   wallRoulette.rotation.z -= dt * (0.6 + 3 * jackpotGlow);
   wristRoulette.rotation.y += dt * 2.5;
+  for (const [i, m] of pumpkinFaces.entries()) m.color.setScalar(1.35 + 0.35 * Math.sin(time * 9 + i * 2.1) * Math.sin(time * 3.7 + i));
+  pumpkinLight.intensity = 5 + 1.5 * Math.sin(time * 8.3) + 2 * jackpotGlow;
+  for (const b of bats) {
+    b.a += b.speed * dt;
+    b.m.position.set(Math.cos(b.a) * b.r, b.h + Math.sin(time * 1.3 + b.flap) * 0.4, Math.sin(b.a) * b.r * 0.6 - 3);
+    b.m.rotation.y = -b.a + (b.speed > 0 ? 0 : Math.PI);
+    b.m.scale.x = 0.35 + 0.65 * Math.abs(Math.sin(time * 12 + b.flap));
+  }
 
   // Ballons folgen der Hand (gedämpfte Feder)
   armR.elbow.localToWorld(handPos.set(-0.1, -1.0, 0.25));

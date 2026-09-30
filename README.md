@@ -2,11 +2,15 @@
 
 ## 1. Crazy Gambler – Hakari-Dance (`crazy-gambler/index.html`)
 
-Der Crazy Gambler aus **Anime Jackpot** als 3D-Roblox-Figur (three.js). Er tanzt in einer Casino-Kulisse einen Tanz, der von Hakaris Jackpot-Tanz aus Jujutsu Kaisen inspiriert ist. Ein Durchlauf dauert 32 Schläge (128 BPM, ca. 15 Sekunden):
+Der Crazy Gambler aus **Anime Jackpot** als 3D-Roblox-Figur (three.js) im Hakari-Stil aus Jujutsu Kaisen: gebleicht-blonde Stachelfrisur, dünner Schnurrbart und offene dunkle Uniformjacke mit goldenen Knöpfen über der nackten Brust mit dem 777-Spielautomaten. Den Killerclown-Look und die Halloween-Stimmung behält er: Clownsschminke, rote Nase, Haifisch-Grinsen, Hörner, rote Strähnen und Clownsschuhe. Dazu kommen Kürbisse und Fledermäuse im Casino.
 
-1. **Groove** (Schlag 0–15): Gewicht von Seite zu Seite, federnde Knie, lockere Arme, das freie Bein tippt an
-2. **Twist** (Schlag 16–23): tiefe Knie, Füße drehen gegen die Hüfte, Hände rollen umeinander. Dabei zieht er den Hebel, und die Walzen auf der Brust drehen sich.
-3. **Jackpot** (Schlag 24–31): Die Walzen landen auf 7-7-7. Er zeigt nach oben, dann gehen beide Arme hoch zum Schulter-Shimmy. Dazu gibt es Münzregen, eine Aura und den JACKPOT-Schriftzug.
+Der Tanz ist an den viralen „Hakari Dance“ angelehnt. Ein Durchlauf dauert 32 Schläge (130 BPM, ca. 15 Sekunden):
+
+1. **Hakari-Groove** (Schlag 0–15): breiter Stand, tiefer Bounce auf jedem Schlag, die Hüfte kippt im Wechsel, die Fäuste pumpen und der Kopf nickt; ab Schlag 8 gehen die Hände auf Kopfhöhe
+2. **Twist** (Schlag 16–23): tiefe Knie, Füße drehen gegen die Hüfte, Hände rollen umeinander. Dabei zieht er den Hebel, und die Walzen drehen sich.
+3. **Jackpot** (Schlag 24–31): Die Walzen landen auf 7-7-7. Er zeigt nach oben, dann Arme hoch zum Schulter-Shimmy, dazu Münzregen, grüne Aura und der JACKPOT-Schriftzug.
+
+Die Musik ist ein eigener Phonk-Beat (Cowbell, 808, Funk-Kick), nicht der Originalsong.
 
 **Öffnen:** `crazy-gambler/index.html` doppelklicken. Du brauchst eine Internetverbindung, weil three.js von einem CDN geladen wird.
 
@@ -14,7 +18,7 @@ Der Crazy Gambler aus **Anime Jackpot** als 3D-Roblox-Figur (three.js). Er tanzt
 | --- | --- |
 | Maus ziehen / wischen | Kamera drehen |
 | Scrollen / Pinch | Zoom |
-| „♪ Musik an“ oder `M` | Eigener Beat, synchron zum Tanz |
+| „♪ Musik an“ oder `M` | Eigener Phonk-Beat, synchron zum Tanz |
 | „Pause“ oder Leertaste | Anhalten |
 
 Zum Anpassen: Das `CONFIG`-Objekt enthält Tempo, Neon-Leuchten, Konfetti- und Münzmenge. Die Tanzschritte stehen in den Funktionen `poseGroove`, `poseTwist` und `poseJackpot`; jede Zahl dort ist ein Gelenkwinkel.
