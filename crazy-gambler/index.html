@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crazy Gambler</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #070a1e; }
+  body { font: 600 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e6ebff; }
+  #app canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  .brand { position: fixed; top: 16px; left: 16px; pointer-events: none; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+  .brand b {
+    display: block; font: 900 22px/1 "Arial Black", Impact, system-ui, sans-serif; letter-spacing: 0.04em;
+    background: linear-gradient(90deg, #ff3b3b, #ff9f1a, #ffe53b, #3bff6f, #3bc8ff, #b43bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand span { font-size: 12px; opacity: 0.8; letter-spacing: 0.05em; }
+
+  .jackpot {
+    position: fixed; top: 18%; left: 50%; transform: translate(-50%, -50%) scale(0);
+    font: 900 clamp(44px, 11vw, 128px)/1 "Arial Black", Impact, system-ui, sans-serif; letter-spacing: 0.03em;
+    background: linear-gradient(90deg, #ff3b3b, #ff9f1a, #ffe53b, #3bff6f, #3bc8ff, #b43bff, #ff3b9d);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    -webkit-text-stroke: 3px #1b0833;
+    filter: drop-shadow(0 0 18px rgba(255, 214, 80, 0.75));
+    pointer-events: none; white-space: nowrap; opacity: 0;
+  }
+  .jackpot.show { animation: pop 0.55s cubic-bezier(0.2, 1.7, 0.4, 1) forwards, shine 1.2s linear infinite; }
+  .jackpot.hide { animation: out 0.4s ease-in forwards; }
+  @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(-8deg); } to { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-3deg); } }
+  @keyframes out { from { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-3deg); } to { opacity: 0; transform: translate(-50%, -50%) scale(1.4) rotate(0deg); } }
+  @keyframes shine { to { background-position: 200% 0; } }
+
+  .controls { position: fixed; left: 0; right: 0; bottom: 20px; display: flex; gap: 10px; justify-content: center; padding: 0 16px; }
+  .controls button {
+    padding: 9px 16px; border-radius: 999px; border: 1px solid rgba(160, 200, 255, 0.35);
+    background: rgba(14, 18, 48, 0.6); backdrop-filter: blur(6px);
+    color: inherit; font: inherit; letter-spacing: 0.04em; cursor: pointer;
+  }
+  .controls button:hover { background: rgba(40, 52, 120, 0.7); }
+  .controls button:focus-visible { outline: 2px solid #7fd4ff; outline-offset: 2px; }
+  .controls button[aria-pressed="true"] { border-color: #ffe23a; color: #ffe23a; }
+
+  .hint { position: fixed; top: 16px; right: 16px; font-size: 12px; opacity: 0.6; pointer-events: none; text-align: right; }
+  .error {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center;
+    font-size: 16px; line-height: 1.6; background: #070a1e;
+  }
+  .error[hidden] { display: none; }
+  @media (max-width: 520px) { .hint { display: none; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div class="brand"><b>ANIME JACKPOT</b><span>Crazy Gambler · Hakari-Dance</span></div>
+<div class="hint">Ziehen = Kamera drehen · Scrollen = Zoom</div>
+<div class="jackpot" id="jackpot">JACKPOT!</div>
+<div class="controls">
+  <button id="music" type="button" aria-pressed="false">♪ Musik an</button>
+  <button id="pause" type="button" aria-pressed="false">❚❚ Pause</button>
+</div>
+<div class="error" id="error" hidden>
+  Die Animation lädt die 3D-Bibliothek three.js aus dem Internet.<br>
+  Bitte mit Internetverbindung öffnen (und ggf. die Seite neu laden).
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ============================================================
+//  Einstellungen
+// ============================================================
+const CONFIG = {
+  bpm: 128,          // Tempo von Tanz und Musik
+  bloom: 0.6,        // Stärke des Neon-Leuchtens
+  confetti: 320,     // Anzahl Konfetti-Schnipsel
+  maxCoins: 220,     // Münzen beim Jackpot
+};
+
+const SKIN = '#e9b893';
+const PANTS = '#15151b';
+const RAINBOW = ['#ee2b2b', '#f5871f', '#f7d21e', '#3cc24a', '#2b8fe3', '#8b3fd9'];
+const TAU = Math.PI * 2;
+const HIP_Y = 2;       // Hüfthöhe (Beinlänge 1 + 1)
+const LOOP = 32;       // Schläge pro Tanz-Durchlauf
+const SPB = 60 / CONFIG.bpm;
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const mod = (a, n) => ((a % n) + n) % n;
+
+// Kleiner Zufallsgenerator mit festem Startwert → Haare sehen immer gleich aus
+function rng(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ============================================================
+//  Renderer, Szene, Kamera
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0a0f2c');
+scene.fog = new THREE.Fog('#0a0f2c', 26, 60);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = envMap;
+
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 200);
+const camTarget = new THREE.Vector3(0, 3.6, 0);
+const CAM_AZ = 0.2;
+const CAM_EL = 0.08;
+let camDist = 14;
+
+function fitCamera() {
+  const aspect = window.innerWidth / window.innerHeight;
+  camDist = Math.max(16.5, 10.5 / aspect);
+}
+fitCamera();
+camera.position.set(
+  camTarget.x + Math.sin(CAM_AZ) * Math.cos(CAM_EL) * camDist,
+  camTarget.y + Math.sin(CAM_EL) * camDist,
+  camTarget.z + Math.cos(CAM_AZ) * Math.cos(CAM_EL) * camDist,
+);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.copy(camTarget);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minDistance = 7;
+controls.maxDistance = 34;
+controls.maxPolarAngle = 1.55;
+let lastInteraction = -1e9;
+controls.addEventListener('start', () => { lastInteraction = performance.now(); });
+controls.addEventListener('end', () => { lastInteraction = performance.now(); });
+
+// Nachleuchten (Bloom) für Neon
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), CONFIG.bloom, 0.5, 1.3);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ============================================================
+//  Licht
+// ============================================================
+scene.add(new THREE.HemisphereLight('#c4d6ff', '#2a2150', 0.75));
+
+const key = new THREE.DirectionalLight('#fff4e8', 2.1);
+key.position.set(4, 11, 9);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -7, right: 7, top: 9, bottom: -3, near: 1, far: 40 });
+key.shadow.normalBias = 0.03;
+scene.add(key);
+
+const rimPink = new THREE.DirectionalLight('#ff4fd8', 1.6);
+rimPink.position.set(-7, 6, -6);
+scene.add(rimPink);
+const rimCyan = new THREE.DirectionalLight('#3fd6ff', 1.6);
+rimCyan.position.set(7, 6, -6);
+scene.add(rimCyan);
+
+// ============================================================
+//  Hilfsfunktionen für Canvas-Texturen
+// ============================================================
+function makeCanvas(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  if (draw) draw(c.getContext('2d'), w, h);
+  return c;
+}
+
+function texture(canvas) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+function material(src, extra = {}) {
+  const base = { roughness: 0.62, metalness: 0, envMapIntensity: 0.45, ...extra };
+  if (src instanceof HTMLCanvasElement) return new THREE.MeshStandardMaterial({ map: texture(src), ...base });
+  return new THREE.MeshStandardMaterial({ color: src, ...base });
+}
+
+// Block mit eigener Farbe/Textur je Seite: px, nx, py, ny, pz (vorne), nz (hinten)
+function block(w, h, d, faces) {
+  const mats = ['px', 'nx', 'py', 'ny', 'pz', 'nz'].map((k) => {
+    const src = faces[k] ?? faces.all;
+    return src instanceof THREE.Material ? src : material(src);
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function put(parent, obj, x = 0, y = 0, z = 0) {
+  obj.position.set(x, y, z);
+  parent.add(obj);
+  return obj;
+}
+
+function noise(g, w, h, color, count, size = 1.5) {
+  g.fillStyle = color;
+  const r = rng(w * 31 + h);
+  for (let i = 0; i < count; i++) g.fillRect(r() * w, r() * h, size, size);
+}
+
+function stripes(g, x, y, w, h, vertical = true) {
+  const n = RAINBOW.length;
+  const band = (vertical ? w : h) / (n * 1.25);
+  RAINBOW.forEach((c, i) => {
+    g.fillStyle = c;
+    const o = i * band * 1.25;
+    if (vertical) g.fillRect(x + o, y, band, h);
+    else g.fillRect(x, y + o, w, band);
+  });
+}
+
+const PIPS = {
+  1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]],
+  4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+  6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
+};
+
+function drawDie(g, cx, cy, s, rot, n) {
+  g.save();
+  g.translate(cx, cy); g.rotate(rot);
+  g.beginPath(); g.roundRect(-s / 2, -s / 2, s, s, s * 0.18);
+  g.fillStyle = '#f5f5f0'; g.fill();
+  g.lineWidth = s * 0.06; g.strokeStyle = '#1a1a1a'; g.stroke();
+  g.fillStyle = '#111';
+  for (const [px, py] of PIPS[n]) {
+    g.beginPath(); g.arc(px * s * 0.27, py * s * 0.27, s * 0.085, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+function drawCard(g, cx, cy, w, h, rot, rank, suit) {
+  const red = suit === '♥' || suit === '♦';
+  g.save();
+  g.translate(cx, cy); g.rotate(rot);
+  g.beginPath(); g.roundRect(-w / 2, -h / 2, w, h, w * 0.1);
+  g.fillStyle = '#fbfbf7'; g.fill();
+  g.lineWidth = Math.max(1.5, w * 0.03); g.strokeStyle = '#2a2a2a'; g.stroke();
+  g.fillStyle = red ? '#d3182a' : '#111';
+  g.textAlign = 'left'; g.textBaseline = 'top';
+  g.font = `bold ${h * 0.2}px Georgia, serif`;
+  g.fillText(rank, -w / 2 + w * 0.09, -h / 2 + h * 0.05);
+  g.font = `${h * 0.16}px serif`;
+  g.fillText(suit, -w / 2 + w * 0.09, -h / 2 + h * 0.25);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `${h * 0.5}px serif`;
+  g.fillText(suit, 0, h * 0.08);
+  g.restore();
+}
+
+// ============================================================
+//  Texturen des Charakters
+// ============================================================
+
+// --- Clownsgesicht ---
+const faceCanvas = makeCanvas(256, 256, (g, w, h) => {
+  const bg = g.createRadialGradient(128, 118, 30, 128, 128, 170);
+  bg.addColorStop(0, '#f4efe7'); bg.addColorStop(0.7, '#d9d0c4'); bg.addColorStop(1, '#a89c90');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+
+  // Stirnfalten
+  g.strokeStyle = 'rgba(90, 70, 60, 0.35)'; g.lineWidth = 2.5; g.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    g.beginPath(); g.moveTo(80, 36 + i * 9); g.quadraticCurveTo(128, 28 + i * 9, 176, 36 + i * 9); g.stroke();
+  }
+
+  // Augenhöhlen
+  for (const [x, rot] of [[84, 0.3], [172, -0.3]]) {
+    g.save(); g.translate(x, 106); g.rotate(rot);
+    const eg = g.createRadialGradient(0, 2, 4, 0, 0, 38);
+    eg.addColorStop(0, '#12070f'); eg.addColorStop(0.6, '#3a1a2a'); eg.addColorStop(1, 'rgba(90, 60, 80, 0)');
+    g.fillStyle = eg;
+    g.beginPath(); g.ellipse(0, 0, 38, 26, 0, 0, TAU); g.fill();
+    g.restore();
+  }
+
+  // Rauten über und unter den Augen
+  g.fillStyle = '#1f2f6e';
+  for (const [x, y, s] of [[84, 62, 1], [172, 62, 1], [76, 140, 0.7], [180, 140, 0.7]]) {
+    g.beginPath();
+    g.moveTo(x, y - 17 * s); g.lineTo(x + 6 * s, y); g.lineTo(x, y + 17 * s); g.lineTo(x - 6 * s, y);
+    g.closePath(); g.fill();
+  }
+
+  // Augen
+  for (const x of [88, 168]) {
+    g.fillStyle = '#c52b1c'; g.beginPath(); g.arc(x, 110, 11, 0, TAU); g.fill();
+    g.fillStyle = '#ffd23a'; g.beginPath(); g.arc(x, 110, 7.5, 0, TAU); g.fill();
+    g.fillStyle = '#000'; g.beginPath(); g.arc(x, 110, 3.5, 0, TAU); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(x - 3, 106, 2, 0, TAU); g.fill();
+  }
+
+  // Böse Augenbrauen
+  g.strokeStyle = '#140a10'; g.lineWidth = 9;
+  g.beginPath(); g.moveTo(44, 72); g.lineTo(114, 94); g.stroke();
+  g.beginPath(); g.moveTo(212, 72); g.lineTo(142, 94); g.stroke();
+
+  // Schatten der Nase
+  g.fillStyle = 'rgba(120, 20, 20, 0.35)'; g.beginPath(); g.arc(128, 140, 19, 0, TAU); g.fill();
+
+  // Breites Grinsen mit spitzen Zähnen
+  const L = [34, 150], R = [222, 150], upC = [128, 176], loC = [128, 268];
+  const q = (p0, c, p2, t) => [
+    (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p2[0],
+    (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p2[1],
+  ];
+  g.beginPath();
+  g.moveTo(...L); g.quadraticCurveTo(...upC, ...R); g.quadraticCurveTo(...loC, ...L);
+  g.fillStyle = '#3b0508'; g.fill();
+
+  g.fillStyle = '#f2e7b0'; g.strokeStyle = '#6d5522'; g.lineWidth = 1.5;
+  const teeth = 11;
+  for (let i = 0; i < teeth; i++) {
+    const t0 = 0.06 + (i / teeth) * 0.88, t1 = 0.06 + ((i + 1) / teeth) * 0.88;
+    const a = q(L, upC, R, t0), b = q(L, upC, R, t1), m = q(L, upC, R, (t0 + t1) / 2);
+    const len = 16 + 8 * Math.sin(Math.PI * (t0 + t1) / 2);
+    g.beginPath(); g.moveTo(...a); g.lineTo(m[0], m[1] + len); g.lineTo(...b); g.closePath(); g.fill(); g.stroke();
+    const c2 = q(L, loC, R, t0), d2 = q(L, loC, R, t1), m2 = q(L, loC, R, (t0 + t1) / 2);
+    const len2 = 12 + 10 * Math.sin(Math.PI * (t0 + t1) / 2);
+    g.beginPath(); g.moveTo(...c2); g.lineTo(m2[0], m2[1] - len2); g.lineTo(...d2); g.closePath(); g.fill(); g.stroke();
+  }
+
+  g.strokeStyle = '#c3122b'; g.lineWidth = 6;
+  g.beginPath(); g.moveTo(...L); g.quadraticCurveTo(...upC, ...R); g.stroke();
+  g.beginPath(); g.moveTo(...L); g.quadraticCurveTo(...loC, ...R); g.stroke();
+
+  // Lachfalten
+  g.strokeStyle = 'rgba(60, 30, 30, 0.55)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(34, 150); g.quadraticCurveTo(22, 128, 36, 110); g.stroke();
+  g.beginPath(); g.moveTo(222, 150); g.quadraticCurveTo(234, 128, 220, 110); g.stroke();
+  g.beginPath(); g.moveTo(104, 132); g.quadraticCurveTo(88, 146, 70, 150); g.stroke();
+  g.beginPath(); g.moveTo(152, 132); g.quadraticCurveTo(168, 146, 186, 150); g.stroke();
+});
+
+const headSide = makeCanvas(64, 64, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, w, 0);
+  gr.addColorStop(0, '#cfc5b8'); gr.addColorStop(0.5, '#e6ded3'); gr.addColorStop(1, '#cfc5b8');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+
+// --- Oberkörper mit Spielautomat ---
+const TORSO_W = 512, TORSO_H = 460;
+const torsoBase = makeCanvas(TORSO_W, TORSO_H, (g, w, h) => {
+  g.fillStyle = SKIN; g.fillRect(0, 0, w, h);
+  const side = g.createLinearGradient(0, 0, w, 0);
+  side.addColorStop(0, 'rgba(120, 60, 30, 0.25)'); side.addColorStop(0.15, 'rgba(0,0,0,0)');
+  side.addColorStop(0.85, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(120, 60, 30, 0.25)');
+  g.fillStyle = side; g.fillRect(0, 0, w, h);
+
+  // Muskeln
+  g.strokeStyle = 'rgba(128, 70, 38, 0.45)'; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(40, 20); g.quadraticCurveTo(140, 44, 236, 30); g.stroke();
+  g.beginPath(); g.moveTo(472, 20); g.quadraticCurveTo(372, 44, 276, 30); g.stroke();
+  g.beginPath(); g.moveTo(30, 90); g.quadraticCurveTo(80, 118, 96, 150); g.stroke();
+  g.beginPath(); g.moveTo(482, 90); g.quadraticCurveTo(432, 118, 416, 150); g.stroke();
+  g.beginPath(); g.moveTo(256, 396); g.lineTo(256, 458); g.stroke();
+  for (const y of [412, 440]) {
+    g.beginPath(); g.moveTo(170, y); g.quadraticCurveTo(210, y + 6, 246, y); g.stroke();
+    g.beginPath(); g.moveTo(342, y); g.quadraticCurveTo(302, y + 6, 266, y); g.stroke();
+  }
+
+  // Rahmen des Automaten (Gold)
+  const gold = g.createLinearGradient(0, 80, 0, 400);
+  gold.addColorStop(0, '#fbe08a'); gold.addColorStop(0.5, '#c8952f'); gold.addColorStop(1, '#8a5a1c');
+  g.fillStyle = gold; g.strokeStyle = '#4a2c0c'; g.lineWidth = 6;
+  g.beginPath(); g.roundRect(88, 96, 336, 296, 28); g.fill(); g.stroke();
+
+  // Verzierte Ecken
+  for (const [x, y] of [[92, 100], [420, 100], [92, 388], [420, 388]]) {
+    g.beginPath(); g.arc(x, y, 22, 0, TAU); g.fillStyle = gold; g.fill(); g.stroke();
+    g.beginPath(); g.arc(x, y, 11, 0.5, TAU - 0.5); g.stroke();
+  }
+
+  // „777“-Schild oben
+  const plate = g.createLinearGradient(0, 60, 0, 116);
+  plate.addColorStop(0, '#7a2a14'); plate.addColorStop(1, '#3c1206');
+  g.fillStyle = plate; g.beginPath(); g.roundRect(186, 62, 140, 54, 16); g.fill(); g.stroke();
+  g.font = '900 40px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#ffd65a'; g.fillText('777', 256, 91);
+
+  // Innenfeld
+  g.fillStyle = '#2c1a0b'; g.beginPath(); g.roundRect(110, 138, 292, 186, 14); g.fill();
+
+  // „SLOT“-Schild unten
+  g.fillStyle = plate; g.beginPath(); g.roundRect(200, 334, 112, 40, 12); g.fill(); g.stroke();
+  g.font = 'bold 26px Georgia, serif'; g.fillStyle = '#ffd65a'; g.fillText('SLOT', 256, 355);
+});
+
+// Glühbirnen rund um den Rahmen
+const BULBS = [];
+for (let x = 120; x <= 392; x += 34) { BULBS.push([x, 108]); BULBS.push([x, 380]); }
+for (let y = 142; y <= 346; y += 34) { BULBS.push([100, y]); BULBS.push([412, y]); }
+
+// Walzen-Symbole: 0 = Sieben
+const SYMBOLS = 5;
+function drawSymbol(g, idx, cx, cy, glow) {
+  g.save(); g.translate(cx, cy);
+  if (idx === 0) {
+    g.font = '900 74px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const gr = g.createLinearGradient(0, -34, 0, 34);
+    gr.addColorStop(0, '#ffbf2e'); gr.addColorStop(1, '#e8361c');
+    g.lineWidth = 7; g.strokeStyle = glow ? '#ffb020' : '#5a0f06';
+    g.strokeText('7', 0, 4); g.fillStyle = gr; g.fillText('7', 0, 4);
+  } else if (idx === 1) {
+    g.strokeStyle = '#2f8a1f'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(-12, 8); g.quadraticCurveTo(-4, -22, 8, -26); g.stroke();
+    g.beginPath(); g.moveTo(14, 12); g.quadraticCurveTo(10, -14, 8, -26); g.stroke();
+    for (const [x, y] of [[-14, 14], [14, 18]]) {
+      g.fillStyle = '#d4142a'; g.beginPath(); g.arc(x, y, 14, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(x - 5, y - 5, 4, 0, TAU); g.fill();
+    }
+  } else if (idx === 2) {
+    g.fillStyle = '#111'; g.beginPath(); g.roundRect(-34, -18, 68, 36, 8); g.fill();
+    g.fillStyle = '#fff'; g.font = '900 24px "Arial Black", Impact, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('BAR', 0, 1);
+  } else if (idx === 3) {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 13 : 30, a = -Math.PI / 2 + (i * Math.PI) / 5;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath(); g.fillStyle = '#ffd21e'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#c46a00'; g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(0, -30); g.lineTo(24, 0); g.lineTo(0, 30); g.lineTo(-24, 0); g.closePath();
+    g.fillStyle = '#35c8ff'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#1466a8'; g.stroke();
+  }
+  g.restore();
+}
+
+const torsoCanvas = makeCanvas(TORSO_W, TORSO_H);
+const torsoGlowCanvas = makeCanvas(TORSO_W, TORSO_H);
+const torsoTex = texture(torsoCanvas);
+const torsoGlowTex = texture(torsoGlowCanvas);
+let torsoKey = '';
+
+function drawTorso(state) {
+  const key = state.reels.map((p) => p.toFixed(2)).join(',') + '|' + state.bulbPhase + '|' + state.jackpot + '|' + state.lever.toFixed(2);
+  if (key === torsoKey) return;
+  torsoKey = key;
+
+  const g = torsoCanvas.getContext('2d');
+  const e = torsoGlowCanvas.getContext('2d');
+  g.drawImage(torsoBase, 0, 0);
+  e.fillStyle = '#000'; e.fillRect(0, 0, TORSO_W, TORSO_H);
+
+  // Drei Walzen
+  const symH = 64;
+  for (let i = 0; i < 3; i++) {
+    const x = 120 + i * 94, y = 146, w = 84, h = 170, cy = y + h / 2;
+    const p = state.reels[i];
+    const base = Math.floor(p), frac = p - base;
+    const blur = state.spinning[i];
+    g.save();
+    g.beginPath(); g.roundRect(x, y, w, h, 8); g.clip();
+    g.fillStyle = '#fbf6ea'; g.fillRect(x, y, w, h);
+    for (let k = -2; k <= 2; k++) {
+      const idx = mod(base + k, SYMBOLS);
+      const sy = cy + (frac - k) * symH;
+      if (blur) {
+        g.globalAlpha = 0.35;
+        for (const o of [-14, 0, 14]) drawSymbol(g, idx, x + w / 2, sy + o);
+        g.globalAlpha = 1;
+      } else {
+        drawSymbol(g, idx, x + w / 2, sy);
+      }
+    }
+    const shade = g.createLinearGradient(0, y, 0, y + h);
+    shade.addColorStop(0, 'rgba(40, 20, 0, 0.65)'); shade.addColorStop(0.3, 'rgba(0,0,0,0)');
+    shade.addColorStop(0.7, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(40, 20, 0, 0.65)');
+    g.fillStyle = shade; g.fillRect(x, y, w, h);
+    g.restore();
+    g.lineWidth = 4; g.strokeStyle = '#e8b64a';
+    g.beginPath(); g.roundRect(x, y, w, h, 8); g.stroke();
+
+    if (state.jackpot) {
+      e.save(); e.globalAlpha = state.bulbPhase % 2 ? 0.9 : 0.55;
+      drawSymbol(e, 0, x + w / 2, cy, true);
+      e.restore();
+    }
+  }
+
+  // Gewinnlinie
+  g.fillStyle = '#e8261c';
+  g.beginPath(); g.moveTo(106, 222); g.lineTo(118, 231); g.lineTo(106, 240); g.fill();
+  g.beginPath(); g.moveTo(406, 222); g.lineTo(394, 231); g.lineTo(406, 240); g.fill();
+
+  // Lauflichter
+  BULBS.forEach(([x, y], i) => {
+    const on = state.jackpot ? (i + state.bulbPhase) % 2 === 0 : (i + state.bulbPhase) % 3 === 0;
+    g.beginPath(); g.arc(x, y, 7, 0, TAU);
+    g.fillStyle = on ? '#fff6c0' : '#8c6a2c'; g.fill();
+    g.lineWidth = 2; g.strokeStyle = '#4a2c0c'; g.stroke();
+    if (on) {
+      e.beginPath(); e.arc(x, y, 8, 0, TAU);
+      e.fillStyle = state.jackpot ? '#ffe070' : '#d8b050'; e.fill();
+    }
+  });
+
+  // Hebel rechts
+  const ballY = 150 + state.lever * 150;
+  g.fillStyle = '#5a5a60'; g.fillRect(426, 280, 22, 44);
+  g.strokeStyle = '#b8b8c0'; g.lineWidth = 8; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(446, 300); g.lineTo(452, ballY); g.stroke();
+  const ball = g.createRadialGradient(446, ballY - 6, 2, 452, ballY, 18);
+  ball.addColorStop(0, '#ff8a8a'); ball.addColorStop(1, '#b30f16');
+  g.fillStyle = ball; g.beginPath(); g.arc(452, ballY, 17, 0, TAU); g.fill();
+
+  torsoTex.needsUpdate = true;
+  torsoGlowTex.needsUpdate = true;
+}
+
+const torsoBack = makeCanvas(128, 116, (g, w, h) => {
+  g.fillStyle = SKIN; g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(128, 70, 38, 0.35)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(64, 10); g.lineTo(64, h); g.stroke();
+  g.beginPath(); g.arc(34, 40, 22, 0.3, 2.6); g.stroke();
+  g.beginPath(); g.arc(94, 40, 22, 0.5, 2.8); g.stroke();
+});
+
+// --- Arme ---
+const skinFace = makeCanvas(64, 64, (g, w, h) => {
+  g.fillStyle = SKIN; g.fillRect(0, 0, w, h);
+  noise(g, w, h, 'rgba(150, 90, 60, 0.12)', 120);
+});
+
+const tattooArm = makeCanvas(128, 122, (g, w, h) => {
+  g.fillStyle = SKIN; g.fillRect(0, 0, w, h);
+  drawCard(g, 42, 64, 40, 58, -0.35, 'A', '♠');
+  drawCard(g, 66, 58, 40, 58, 0, 'K', '♣');
+  drawCard(g, 90, 64, 40, 58, 0.35, '5', '♥');
+});
+
+// --- Hose ---
+function pants(w, h, extra) {
+  return makeCanvas(w, h, (g) => {
+    g.fillStyle = PANTS; g.fillRect(0, 0, w, h);
+    noise(g, w, h, 'rgba(255,255,255,0.05)', 260);
+    if (extra) extra(g, w, h);
+  });
+}
+const pantsPlain = pants(64, 64);
+const legRU = pants(128, 140, (g, w, h) => stripes(g, 8, 0, 36, h));
+const legRUside = pants(128, 140, (g, w, h) => stripes(g, 20, 0, 88, h));
+const legRL = pants(128, 92, (g, w, h) => { stripes(g, 8, 0, 36, h); drawCard(g, 88, 46, 38, 56, 0.25, 'A', '♣'); });
+const legRLside = pants(128, 92, (g, w, h) => stripes(g, 20, 0, 88, h));
+const legLU = pants(128, 140, (g, w, h) => {
+  g.save(); g.translate(64, 70); g.rotate(-0.5); stripes(g, -20, -90, 40, 180); g.restore();
+  drawDie(g, 56, 60, 58, 0.25, 5);
+});
+const legLUside = pants(128, 140, (g) => drawCard(g, 64, 70, 58, 84, -0.15, 'J', '♠'));
+const legLL = pants(128, 92, (g, w, h) => { stripes(g, 84, 0, 36, h); drawDie(g, 48, 46, 46, -0.2, 3); });
+const legLLside = pants(128, 92, (g, w, h) => stripes(g, 20, 0, 88, h));
+
+// --- Clownsschuhe ---
+const shoeRed = makeCanvas(256, 128, (g, w, h) => {
+  g.fillStyle = '#e0262c'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#2f78e0';
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 10; col++) {
+      g.beginPath(); g.arc(col * 26 + (row % 2) * 13 + 6, row * 22 + 12, 7, 0, TAU); g.fill();
+    }
+  }
+});
+const shoeGreen = makeCanvas(256, 128, (g, w, h) => {
+  g.fillStyle = '#3fc93a'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ffe23a';
+  for (let x = -128; x < w; x += 34) {
+    g.beginPath(); g.moveTo(x, h); g.lineTo(x + 16, h); g.lineTo(x + 16 + 90, 0); g.lineTo(x + 90, 0); g.fill();
+  }
+});
+const cuffA = makeCanvas(128, 32, (g, w, h) => {
+  for (let x = 0; x < w; x += 16) { g.fillStyle = (x / 16) % 2 ? '#3cc24a' : '#ffd21e'; g.fillRect(x, 0, 16, h); }
+});
+const cuffB = makeCanvas(128, 32, (g, w, h) => {
+  for (let x = 0; x < w; x += 16) { g.fillStyle = (x / 16) % 2 ? '#e3262c' : '#ffd21e'; g.fillRect(x, 0, 16, h); }
+});
+
+// --- Partyhut, Chips, Roulette, Münzen ---
+const hatCanvas = makeCanvas(256, 64, (g, w, h) => {
+  const cols = ['#ee2b2b', '#ffd21e', '#3cc24a', '#2b8fe3', '#8b3fd9', '#ff7a1a'];
+  for (let i = 0; i < 12; i++) { g.fillStyle = cols[i % cols.length]; g.fillRect((i * w) / 12, 0, w / 12 + 1, h); }
+});
+
+function chipCanvas(color) {
+  return makeCanvas(128, 128, (g) => {
+    g.fillStyle = color; g.beginPath(); g.arc(64, 64, 64, 0, TAU); g.fill();
+    g.fillStyle = '#fff';
+    for (let i = 0; i < 8; i++) {
+      g.save(); g.translate(64, 64); g.rotate((i * TAU) / 8);
+      g.fillRect(-8, -64, 16, 20); g.restore();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 4;
+    g.beginPath(); g.arc(64, 64, 36, 0, TAU); g.stroke();
+  });
+}
+function chipEdgeCanvas(color) {
+  return makeCanvas(128, 16, (g, w, h) => {
+    g.fillStyle = color; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#fff';
+    for (let x = 0; x < w; x += 16) g.fillRect(x, 0, 6, h);
+  });
+}
+const CHIP_COLORS = ['#d6202e', '#1f5fd6', '#1d9a3c', '#1a1a1a', '#b88a2e'];
+const chipMats = CHIP_COLORS.map((c) => {
+  const face = material(chipCanvas(c), { roughness: 0.45 });
+  return [material(chipEdgeCanvas(c), { roughness: 0.45 }), face, face];
+});
+
+const rouletteCanvas = makeCanvas(512, 512, (g) => {
+  const c = 256;
+  const wood = g.createRadialGradient(c, c, 180, c, c, 256);
+  wood.addColorStop(0, '#8a4a1e'); wood.addColorStop(1, '#3a1a08');
+  g.fillStyle = wood; g.beginPath(); g.arc(c, c, 254, 0, TAU); g.fill();
+  g.strokeStyle = '#e8b64a'; g.lineWidth = 6; g.beginPath(); g.arc(c, c, 232, 0, TAU); g.stroke();
+  const n = 37;
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU;
+    g.beginPath(); g.moveTo(c, c); g.arc(c, c, 226, a0, a1); g.closePath();
+    g.fillStyle = i === 0 ? '#1d9a3c' : i % 2 ? '#c8141e' : '#161616'; g.fill();
+    g.save(); g.translate(c, c); g.rotate((a0 + a1) / 2 + Math.PI / 2);
+    g.fillStyle = '#fff'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center';
+    g.fillText(String(i), 0, -204); g.restore();
+  }
+  g.fillStyle = '#1d7a36'; g.beginPath(); g.arc(c, c, 180, 0, TAU); g.fill();
+  const cone = g.createRadialGradient(c, c, 20, c, c, 150);
+  cone.addColorStop(0, '#d9a441'); cone.addColorStop(1, '#6b3812');
+  g.fillStyle = cone; g.beginPath(); g.arc(c, c, 150, 0, TAU); g.fill();
+  g.strokeStyle = '#f6d36a'; g.lineWidth = 10; g.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    const a = (i * TAU) / 4 + Math.PI / 4;
+    g.beginPath(); g.moveTo(c, c); g.lineTo(c + Math.cos(a) * 118, c + Math.sin(a) * 118); g.stroke();
+    g.fillStyle = '#f6d36a'; g.beginPath(); g.arc(c + Math.cos(a) * 118, c + Math.sin(a) * 118, 12, 0, TAU); g.fill();
+  }
+  g.fillStyle = '#f6d36a'; g.beginPath(); g.arc(c, c, 26, 0, TAU); g.fill();
+});
+
+const coinCanvas = makeCanvas(128, 128, (g) => {
+  const gr = g.createRadialGradient(50, 44, 10, 64, 64, 64);
+  gr.addColorStop(0, '#fff2a8'); gr.addColorStop(0.6, '#f0b82e'); gr.addColorStop(1, '#a8680e');
+  g.fillStyle = gr; g.beginPath(); g.arc(64, 64, 64, 0, TAU); g.fill();
+  g.strokeStyle = '#8a5208'; g.lineWidth = 5; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.stroke();
+  g.fillStyle = '#8a5208'; g.font = '900 56px "Arial Black", Impact, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 64, 68);
+});
+
+const balloonDots = makeCanvas(128, 64, (g, w, h) => {
+  g.fillStyle = '#e8232e'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ffd21e';
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+    g.beginPath(); g.arc(c * 22 + (r % 2) * 11 + 6, r * 16 + 8, 4.5, 0, TAU); g.fill();
+  }
+});
+
+// ============================================================
+//  Der Crazy Gambler (R15-Rig: Hüfte → Brust → Kopf/Arme, Beine mit Knien)
+// ============================================================
+const character = new THREE.Group();
+scene.add(character);
+
+const pelvis = put(character, new THREE.Group(), 0, HIP_Y, 0);
+put(pelvis, block(1.96, 0.42, 0.96, { all: pantsPlain }), 0, 0, 0);
+
+const chest = put(pelvis, new THREE.Group(), 0, 0.2, 0);
+const torsoMat = new THREE.MeshStandardMaterial({
+  map: torsoTex, emissiveMap: torsoGlowTex, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: 1.6,
+  roughness: 0.55, envMapIntensity: 0.45,
+});
+put(chest, block(2, 1.8, 1, { pz: torsoMat, nz: torsoBack, all: skinFace, ny: pantsPlain }), 0, 0.9, 0);
+
+// --- Kopf ---
+const neck = put(chest, new THREE.Group(), 0, 1.8, 0);
+put(neck, block(1.3, 1.3, 1.2, { pz: faceCanvas, px: headSide, nx: headSide, py: '#e24dbd', nz: '#e24dbd', ny: '#d9d0c4' }), 0, 0.7, 0);
+
+const nose = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 16), material('#e8141e', { roughness: 0.25 }));
+nose.castShadow = true;
+put(neck, nose, 0, 0.66, 0.64);
+
+// Pinke Clownshaare aus vielen Büscheln
+const hairColors = ['#ff4fcf', '#e838b8', '#ff7ae0', '#c42aa8', '#ff5aa8', '#b84bdb'].map((c) => material(c, { roughness: 0.8 }));
+const hairRand = rng(7);
+const hairGeo = new THREE.IcosahedronGeometry(1, 1);
+const spikeGeo = new THREE.ConeGeometry(0.12, 0.5, 8);
+const up = new THREE.Vector3(0, 1, 0);
+for (let i = 0; i < 150; i++) {
+  const theta = hairRand() * TAU;
+  const phi = Math.acos(1 - hairRand() * 1.35);   // eher oben
+  const dir = new THREE.Vector3(Math.sin(phi) * Math.sin(theta), Math.cos(phi), Math.sin(phi) * Math.cos(theta));
+  const pos = dir.clone().multiply(new THREE.Vector3(0.78, 0.62, 0.72)).add(new THREE.Vector3(0, 0.95, -0.05));
+  const inFace = pos.z > 0.2 && pos.y < 1.3 && Math.abs(pos.x) < 0.58;
+  if (inFace) continue;
+  const spike = i % 4 === 0;
+  const m = new THREE.Mesh(spike ? spikeGeo : hairGeo, hairColors[i % hairColors.length]);
+  if (spike) {
+    m.quaternion.setFromUnitVectors(up, dir);
+    m.position.copy(pos).addScaledVector(dir, 0.18);
+  } else {
+    const s = 0.2 + hairRand() * 0.16;
+    m.scale.set(s, s * 1.1, s);
+    m.rotation.set(hairRand() * 3, hairRand() * 3, hairRand() * 3);
+    m.position.copy(pos);
+  }
+  m.castShadow = true;
+  neck.add(m);
+}
+
+// Hörner
+const hornMat = material('#d6ae84', { roughness: 0.5 });
+for (const sx of [-1, 1]) {
+  const horn = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.75, 12), hornMat);
+  horn.castShadow = true;
+  horn.rotation.set(-0.15, 0, -sx * 0.55);
+  put(neck, horn, sx * 0.62, 1.52, 0.18);
+}
+
+// Partyhut
+const hat = new THREE.Group();
+const hatCone = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.72, 24, 1, true), material(hatCanvas, { side: THREE.DoubleSide }));
+hatCone.castShadow = true;
+hat.add(hatCone);
+put(hat, new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), material('#ffd21e')), 0, 0.38, 0);
+hat.rotation.set(0.1, 0, -0.42);
+put(neck, hat, 0.42, 1.78, 0.05);
+
+// --- Arme ---
+function makeArm(side) {
+  const shoulder = put(chest, new THREE.Group(), side * 1.5, 1.55, 0);
+  const upperFaces = side > 0 ? { all: skinFace, pz: tattooArm, px: tattooArm } : { all: skinFace };
+  put(shoulder, block(1, 0.95, 1, upperFaces), 0, -0.225, 0);
+  const elbow = put(shoulder, new THREE.Group(), 0, -0.7, 0);
+  put(elbow, block(0.96, 1.0, 0.96, { all: skinFace }), 0, -0.5, 0);
+  return { shoulder, elbow };
+}
+const armR = makeArm(-1);   // rechter Arm des Charakters (vom Betrachter links)
+const armL = makeArm(1);
+
+// Rechte Hand: Kartenfächer, Chipstapel, Stachel-Würfel
+const fan = put(armR.elbow, new THREE.Group(), 0.05, -0.98, 0.42);
+fan.rotation.x = Math.PI / 2;
+[['K', '♥'], ['Q', '♦'], ['J', '♣'], ['K', '♠'], ['A', '♠']].forEach(([rank, suit], i) => {
+  const c = makeCanvas(128, 184, (g) => drawCard(g, 64, 92, 124, 180, 0, rank, suit));
+  const card = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.66), material(c, { side: THREE.DoubleSide, roughness: 0.4 }));
+  card.castShadow = true;
+  const pivot = new THREE.Group();
+  pivot.rotation.z = 0.7 - i * 0.35;
+  pivot.position.z = -i * 0.012;
+  card.position.y = 0.4;
+  pivot.add(card);
+  fan.add(pivot);
+});
+
+const chipGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.06, 28);
+for (let i = 0; i < 7; i++) {
+  const chip = new THREE.Mesh(chipGeo, chipMats[i % 2 ? 4 : 3]);
+  chip.rotation.x = Math.PI / 2;
+  chip.castShadow = true;
+  put(armR.elbow, chip, -0.3, -0.9, 0.5 + i * 0.065);
+}
+
+const dieFaces = [1, 6, 2, 5, 3, 4].map((n) => material(makeCanvas(96, 96, (g) => {
+  g.fillStyle = '#d9d9d9'; g.fillRect(0, 0, 96, 96); drawDie(g, 48, 48, 92, 0, n);
+}), { roughness: 0.35 }));
+const spikyDie = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), dieFaces);
+spikyDie.castShadow = true;
+const spikeMat = material('#c9ccd4', { metalness: 0.7, roughness: 0.3, envMapIntensity: 1 });
+for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+  const s = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 8), spikeMat);
+  const dir = new THREE.Vector3(sx, sy, sz).normalize();
+  s.quaternion.setFromUnitVectors(up, dir);
+  s.position.copy(dir).multiplyScalar(0.46);
+  spikyDie.add(s);
+}
+spikyDie.rotation.set(0.5, 0.6, 0.2);
+put(armR.elbow, spikyDie, -0.62, -0.78, 0.15);
+
+// Linke Hand: Chip-Armband, Goldreif, Roulette
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * TAU;
+  const chip = new THREE.Mesh(chipGeo, chipMats[i % 4]);
+  const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+  chip.quaternion.setFromUnitVectors(up, dir);
+  chip.castShadow = true;
+  put(armL.elbow, chip, dir.x * 0.6, -0.5 + (i % 2) * 0.06, dir.z * 0.6);
+}
+const bangle = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.06, 12, 40), material('#e8b52e', { metalness: 0.8, roughness: 0.35, envMapIntensity: 0.8 }));
+bangle.rotation.x = Math.PI / 2;
+put(armL.elbow, bangle, 0, -0.82, 0);
+
+const rouletteTex = texture(rouletteCanvas);
+const wristRoulette = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.42, 0.42, 0.1, 40),
+  [material('#4a260c'), new THREE.MeshStandardMaterial({ map: rouletteTex, roughness: 0.4, envMapIntensity: 0.6 }), material('#4a260c')],
+);
+wristRoulette.rotation.z = -Math.PI / 2;
+wristRoulette.castShadow = true;
+put(armL.elbow, wristRoulette, 0.54, -0.72, 0.12);
+
+// --- Beine ---
+function makeLeg(side, faces) {
+  const hip = put(pelvis, new THREE.Group(), side * 0.5, 0, 0);
+  put(hip, block(0.99, 1.1, 0.99, faces.upper), 0, -0.45, 0);
+  const knee = put(hip, new THREE.Group(), 0, -1, 0);
+  put(knee, block(0.95, 0.76, 0.95, faces.lower), 0, -0.38, 0);
+  const shoe = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 18), material(faces.shoe, { roughness: 0.35 }));
+  shoe.scale.set(0.68, 0.3, 1.12);
+  shoe.castShadow = true;
+  put(knee, shoe, 0, -0.72, 0.34);
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.54, 0.16, 28), material(faces.cuff, { roughness: 0.4 }));
+  cuff.castShadow = true;
+  put(knee, cuff, 0, -0.64, 0.05);
+  return { hip, knee };
+}
+const legR = makeLeg(-1, {
+  upper: { all: pantsPlain, pz: legRU, nx: legRUside },
+  lower: { all: pantsPlain, pz: legRL, nx: legRLside },
+  shoe: shoeRed, cuff: cuffA,
+});
+const legL = makeLeg(1, {
+  upper: { all: pantsPlain, pz: legLU, px: legLUside },
+  lower: { all: pantsPlain, pz: legLL, px: legLLside },
+  shoe: shoeGreen, cuff: cuffB,
+});
+
+// ============================================================
+//  Casino-Kulisse
+// ============================================================
+const floorTex = texture(makeCanvas(256, 256, (g, w, h) => {
+  g.fillStyle = '#2e3a6e'; g.fillRect(0, 0, w, h);
+  noise(g, w, h, 'rgba(255,255,255,0.035)', 900, 2);
+  g.strokeStyle = 'rgba(20, 26, 60, 0.6)'; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
+}));
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(14, 14);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.42, envMapIntensity: 0.5 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Leuchtring unter dem Charakter
+const glowCanvas = makeCanvas(128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+});
+const glowTex = texture(glowCanvas);
+const floorGlow = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshBasicMaterial({
+  map: glowTex, color: '#3fd6ff', transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false,
+}));
+floorGlow.rotation.x = -Math.PI / 2;
+put(scene, floorGlow, 0, 0.02, 0);
+const ring = new THREE.Mesh(new THREE.RingGeometry(2.3, 2.42, 72), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.4, 2), transparent: true, opacity: 0.8 }));
+ring.rotation.x = -Math.PI / 2;
+put(scene, ring, 0, 0.03, 0);
+
+// Rückwand mit leuchtenden Glasflächen
+put(scene, new THREE.Mesh(new THREE.PlaneGeometry(80, 30), new THREE.MeshStandardMaterial({ color: '#0c1235', roughness: 0.9 })), 0, 10, -9.2);
+
+function screenCanvas(draw) {
+  return makeCanvas(384, 640, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#c9f4ff'); gr.addColorStop(0.5, '#7fdcff'); gr.addColorStop(1, '#3aa8e8');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    const v = g.createRadialGradient(w / 2, h * 0.45, 40, w / 2, h / 2, h * 0.7);
+    v.addColorStop(0, 'rgba(255,255,255,0.35)'); v.addColorStop(1, 'rgba(0,40,90,0.35)');
+    g.fillStyle = v; g.fillRect(0, 0, w, h);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    if (draw) draw(g, w, h);
+  });
+}
+function outlinedText(g, text, x, y, size, fill, stroke = '#fff') {
+  g.font = `900 ${size}px "Arial Black", Impact, system-ui, sans-serif`;
+  g.lineWidth = size * 0.16; g.strokeStyle = stroke; g.strokeText(text, x, y);
+  g.fillStyle = fill; g.fillText(text, x, y);
+}
+
+const screens = [
+  { x: -9.4, draw: (g, w) => {
+    outlinedText(g, 'ANIME', w / 2, 170, 64, '#1b2a6b');
+    outlinedText(g, 'JACKPOT', w / 2, 250, 58, '#e8261c');
+    outlinedText(g, 'Crazy', w / 2, 380, 50, '#8b3fd9');
+    outlinedText(g, 'Gambler', w / 2, 440, 50, '#8b3fd9');
+  } },
+  { x: -5.2, draw: null },
+  { x: 5.2, draw: (g, w) => {
+    outlinedText(g, 'WINNING ODDS:', w / 2, 90, 36, '#1b2a6b');
+    outlinedText(g, '1 in', w / 2, 160, 60, '#1b2a6b');
+    outlinedText(g, '77.8m', w / 2, 240, 84, '#1b2a6b');
+    outlinedText(g, 'JACKPOT PULL:', w / 2, 360, 36, '#1b2a6b');
+    outlinedText(g, '1 in', w / 2, 430, 60, '#1b2a6b');
+    outlinedText(g, '10k', w / 2, 515, 96, '#1b2a6b');
+  } },
+  { x: 9.4, draw: null },
+];
+const screenMats = [];
+for (const s of screens) {
+  const m = new THREE.MeshBasicMaterial({ map: texture(screenCanvas(s.draw)) });
+  m.color.setScalar(0.8);
+  screenMats.push(m);
+  put(scene, new THREE.Mesh(new THREE.PlaneGeometry(3.6, 6), m), s.x, 4.2, -9);
+  // Säulen mit Neonkante
+  for (const dx of [-1.95, 1.95]) {
+    put(scene, new THREE.Mesh(new THREE.BoxGeometry(0.3, 8, 0.4), material('#151b40')), s.x + dx, 4, -8.9);
+    put(scene, new THREE.Mesh(new THREE.BoxGeometry(0.06, 8, 0.06), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.2, 1.8) })), s.x + dx, 4, -8.66);
+  }
+}
+
+// Roulette-Rad an der Wand
+const wallRoulette = new THREE.Mesh(new THREE.CircleGeometry(1.45, 64), new THREE.MeshBasicMaterial({ map: rouletteTex }));
+wallRoulette.material.color.setScalar(0.85);
+put(scene, wallRoulette, 9.4, 4.4, -8.85);
+
+// Neonschild „CRAZY GAMBLER“
+const signCanvas = makeCanvas(1024, 256, (g, w, h) => {
+  g.fillStyle = '#0c0f2e';
+  g.beginPath(); g.roundRect(18, 18, w - 36, h - 36, 40); g.fill();
+  g.shadowColor = '#39d8ff'; g.shadowBlur = 24; g.lineWidth = 10; g.strokeStyle = '#6fe4ff';
+  g.stroke(); g.shadowBlur = 0;
+  const text = 'CRAZY GAMBLER';
+  const colors = ['#ff3131', '#ff9a1a', '#ffe23a', '#39e05a', '#2fb8ff', '#b04bff', '#ff4fd8'];
+  // Schriftgröße so wählen, dass der Text sicher ins Schild passt
+  const family = 'Impact, "Arial Black", sans-serif';
+  g.font = `900 118px ${family}`;
+  const size = Math.min(118, (118 * (w - 150)) / (g.measureText(text).width + 6 * (text.length - 1)));
+  g.font = `900 ${size}px ${family}`;
+  g.textBaseline = 'middle';
+  const total = g.measureText(text).width + 6 * (text.length - 1);
+  let x = (w - total) / 2;
+  [...text].forEach((ch, i) => {
+    const cw = g.measureText(ch).width;
+    const rot = ((i * 37) % 7 - 3) * 0.02;
+    g.save(); g.translate(x + cw / 2, h / 2 + 6); g.rotate(rot);
+    g.lineWidth = 12; g.strokeStyle = '#150a24'; g.lineJoin = 'round';
+    g.strokeText(ch, -cw / 2, 0);
+    g.fillStyle = colors[i % colors.length]; g.fillText(ch, -cw / 2, 0);
+    g.restore();
+    x += cw + 6;
+  });
+});
+const signMat = new THREE.MeshBasicMaterial({ map: texture(signCanvas), transparent: true });
+const sign = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 2.4), signMat);
+put(scene, sign, 0, 8.3, -8.6);
+
+// Leuchtende Bodenplatte links hinten
+const pad = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 1.7), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.3, 0.2) }));
+put(scene, pad, -7.2, 0.07, -4);
+
+// ============================================================
+//  Luftballons (folgen der rechten Hand mit Verzögerung)
+// ============================================================
+const balloonSpecs = [
+  { color: balloonDots, offset: new THREE.Vector3(-0.5, 2.3, -0.1) },
+  { color: '#3cc24a', offset: new THREE.Vector3(0.35, 2.7, -0.35) },
+  { color: '#9a4bff', offset: new THREE.Vector3(-1.1, 2.9, -0.45) },
+];
+const handPos = new THREE.Vector3();
+const balloons = balloonSpecs.map((spec) => {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.45, 28, 20), material(spec.color, { roughness: 0.2, envMapIntensity: 1 }));
+  mesh.scale.set(1, 1.18, 1);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: '#e9e9f5', transparent: true, opacity: 0.7 }));
+  scene.add(line);
+  return { mesh, line, offset: spec.offset, vel: new THREE.Vector3(), init: false };
+});
+
+// ============================================================
+//  Konfetti, Münzen, Jackpot-Aura
+// ============================================================
+const dummy = new THREE.Object3D();
+
+const confettiMesh = new THREE.InstancedMesh(
+  new THREE.PlaneGeometry(0.12, 0.2),
+  new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+  CONFIG.confetti,
+);
+const confetti = [];
+const confettiColors = ['#ff3b5c', '#ffd21e', '#3cd65a', '#2fb8ff', '#b45bff', '#ff8a1a', '#ffffff'].map((c) => new THREE.Color(c));
+for (let i = 0; i < CONFIG.confetti; i++) {
+  confetti.push({
+    p: new THREE.Vector3((Math.random() - 0.5) * 22, Math.random() * 14, -8 + Math.random() * 15),
+    r: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+    spin: new THREE.Vector3(Math.random() * 4 - 2, Math.random() * 4 - 2, Math.random() * 4 - 2),
+    fall: 0.5 + Math.random() * 0.9,
+    phase: Math.random() * TAU,
+  });
+  confettiMesh.setColorAt(i, confettiColors[i % confettiColors.length]);
+}
+scene.add(confettiMesh);
+
+const coinSide = material('#e0a82a', { metalness: 0.85, roughness: 0.3, envMapIntensity: 1.3 });
+const coinFace = new THREE.MeshStandardMaterial({ map: texture(coinCanvas), metalness: 0.6, roughness: 0.35, envMapIntensity: 1.2 });
+const coinMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 24), [coinSide, coinFace, coinFace], CONFIG.maxCoins);
+coinMesh.castShadow = true;
+coinMesh.count = 0;
+coinMesh.frustumCulled = false;
+scene.add(coinMesh);
+const coins = [];
+
+function spawnCoin(x, y, z, vx, vy, vz) {
+  if (coins.length >= CONFIG.maxCoins) coins.shift();
+  coins.push({
+    p: new THREE.Vector3(x, y, z), v: new THREE.Vector3(vx, vy, vz),
+    r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0),
+    spin: new THREE.Vector3(6 + Math.random() * 8, Math.random() * 4, 0),
+    life: 0,
+  });
+}
+
+const AURA = 170;
+const auraGeo = new THREE.BufferGeometry();
+const auraPos = new Float32Array(AURA * 3);
+const aura = [];
+for (let i = 0; i < AURA; i++) {
+  aura.push({ a: Math.random() * TAU, r: 1.2 + Math.random() * 1.4, y: Math.random() * 7, speed: 1.5 + Math.random() * 2.5 });
+}
+auraGeo.setAttribute('position', new THREE.BufferAttribute(auraPos, 3));
+const auraMat = new THREE.PointsMaterial({
+  size: 0.32, map: glowTex, color: new THREE.Color(0.5, 2, 1.2), transparent: true, opacity: 0,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+});
+scene.add(new THREE.Points(auraGeo, auraMat));
+
+// ============================================================
+//  Der Tanz (inspiriert von Hakaris Jackpot-Tanz)
+//  32 Schläge: 16 × Groove · 8 × Twist mit rollenden Händen · 8 × Jackpot
+// ============================================================
+const POSE_KEYS = ['drop', 'x', 'rotX', 'rotY', 'rotZ', 'chestX', 'chestY', 'chestZ', 'headX', 'headY', 'headZ',
+  'rShX', 'rShY', 'rShZ', 'rElX', 'lShX', 'lShY', 'lShZ', 'lElX', 'liftR', 'liftL', 'legY', 'kneeIn'];
+function emptyPose() { const p = {}; for (const k of POSE_KEYS) p[k] = 0; return p; }
+function blendPoses(list) {
+  const out = emptyPose();
+  for (const [p, w] of list) if (w > 0) for (const k of POSE_KEYS) out[k] += p[k] * w;
+  return out;
+}
+const beatPulse = (b) => 0.5 + 0.5 * Math.cos(TAU * b);   // 1 genau auf dem Schlag
+
+// Groove: Gewicht von Seite zu Seite, federnde Knie, lockere Arme
+function poseGroove(b) {
+  const p = emptyPose();
+  const side = Math.sin((Math.PI * b) / 2);
+  const pulse = beatPulse(b);
+  p.drop = 0.12 + 0.16 * pulse;
+  p.x = 0.3 * side;
+  p.rotY = 0.2 * Math.sin((Math.PI * b) / 2 + 0.7);
+  p.rotZ = -0.07 * side;
+  p.chestX = 0.05 + 0.06 * pulse;
+  p.chestY = -0.22 * side;
+  p.chestZ = 0.08 * side;
+  p.headX = -0.06 + 0.12 * pulse;
+  p.headY = 0.15 * Math.sin((Math.PI * b) / 2 - 0.5);
+  p.headZ = -0.1 * side;
+  p.rShX = -0.5 - 0.4 * side;
+  p.lShX = -0.5 + 0.4 * side;
+  p.rShZ = -0.18 - 0.1 * pulse;
+  p.lShZ = 0.18 + 0.1 * pulse;
+  p.rElX = -1.3 + 0.35 * Math.sin(TAU * b);
+  p.lElX = -1.3 - 0.35 * Math.sin(TAU * b);
+  p.liftR = 0.4 * Math.max(0, side) ** 3;
+  p.liftL = 0.4 * Math.max(0, -side) ** 3;
+  return p;
+}
+
+// Twist: tiefe Knie, Füße drehen gegen die Hüfte, Hände rollen umeinander
+function poseTwist(b) {
+  const p = emptyPose();
+  const s = Math.sin(Math.PI * b);
+  const pulse = beatPulse(b);
+  const a = TAU * b;
+  p.drop = 0.34 + 0.1 * pulse;
+  p.rotY = 0.38 * s;
+  p.legY = -0.7 * s;
+  p.kneeIn = 0.16 * s;
+  p.chestX = 0.2;
+  p.chestY = -0.12 * s;
+  p.headX = 0.02 + 0.1 * pulse;
+  p.headZ = 0.12 * s;
+  p.rShX = -1.0 + 0.3 * Math.sin(a);
+  p.rElX = -1.2 + 0.4 * Math.cos(a);
+  p.lShX = -1.0 - 0.3 * Math.sin(a);
+  p.lElX = -1.2 - 0.4 * Math.cos(a);
+  p.rShZ = -0.3;
+  p.lShZ = 0.3;
+  return p;
+}
+
+// Jackpot: Finger nach oben, dann Arme hoch und Schulter-Shimmy
+function poseJackpot(b, t) {
+  const pulse = beatPulse(b);
+  const point = emptyPose();
+  point.drop = 0.08 + 0.14 * pulse;
+  point.rotY = 0.28;
+  point.chestX = -0.14;
+  point.headX = -0.32;
+  point.headY = 0.15;
+  point.rShX = -2.95; point.rShZ = -0.12; point.rElX = -0.05;
+  point.lShX = -0.35 - 0.25 * pulse; point.lShZ = 0.35; point.lElX = -1.9;
+
+  const shimmy = emptyPose();
+  const sh = Math.sin(4 * Math.PI * b);
+  const side = Math.sin(Math.PI * b);
+  shimmy.drop = 0.14 + 0.14 * pulse;
+  shimmy.x = 0.22 * side;
+  shimmy.rotZ = -0.05 * side;
+  shimmy.chestY = 0.2 * sh;
+  shimmy.chestZ = 0.06 * side;
+  shimmy.headX = -0.18 + 0.1 * pulse;
+  shimmy.headZ = 0.12 * sh;
+  shimmy.rShX = -2.7 + 0.14 * sh; shimmy.lShX = -2.7 - 0.14 * sh;
+  shimmy.rShZ = -0.45; shimmy.lShZ = 0.45;
+  shimmy.rElX = -0.4 - 0.2 * pulse; shimmy.lElX = -0.4 - 0.2 * pulse;
+  shimmy.liftR = 0.35 * Math.max(0, side) ** 3;
+  shimmy.liftL = 0.35 * Math.max(0, -side) ** 3;
+
+  const w = smoothstep(2.3, 3, t);
+  return blendPoses([[point, 1 - w], [shimmy, w]]);
+}
+
+function danceAt(beat) {
+  const lb = mod(beat, LOOP);
+  const lbx = lb < 0.5 ? lb + LOOP : lb;            // Übergang Jackpot → Groove über die Loop-Grenze
+  const wTwist = smoothstep(15.5, 16.5, lbx) - smoothstep(23.5, 24.5, lbx);
+  const wJack = smoothstep(23.5, 24.5, lbx) - smoothstep(31.5, 32.5, lbx);
+  const wGroove = 1 - wTwist - wJack;
+  return blendPoses([
+    [poseGroove(beat), wGroove],
+    [poseTwist(beat), wTwist],
+    [poseJackpot(beat, lbx - 24), wJack],
+  ]);
+}
+
+// Kniewinkel, damit die Füße bei abgesenkter Hüfte am Boden bleiben (Ober- und Unterschenkel je 1 lang)
+const crouch = (drop) => Math.acos(clamp(1 - drop / 2, -1, 1));
+
+function applyPose(p) {
+  pelvis.position.set(p.x, HIP_Y - p.drop, 0);
+  pelvis.rotation.set(p.rotX, p.rotY, p.rotZ);
+  chest.rotation.set(p.chestX, p.chestY, p.chestZ);
+  neck.rotation.set(p.headX, p.headY, p.headZ);
+  armR.shoulder.rotation.set(p.rShX, p.rShY, p.rShZ);
+  armR.elbow.rotation.x = p.rElX;
+  armL.shoulder.rotation.set(p.lShX, p.lShY, p.lShZ);
+  armL.elbow.rotation.x = p.lElX;
+
+  const theta = crouch(p.drop);
+  const comp = Math.asin(clamp(p.x / 2, -0.5, 0.5)) + p.rotZ;   // Füße bleiben trotz Hüftschwung stehen
+  legR.hip.rotation.set(-theta - p.liftR * 1.1, p.legY, -comp + p.kneeIn);
+  legR.knee.rotation.x = 2 * theta + p.liftR * 2.2;
+  legL.hip.rotation.set(-theta - p.liftL * 1.1, p.legY, -comp + p.kneeIn);
+  legL.knee.rotation.x = 2 * theta + p.liftL * 2.2;
+}
+
+// ============================================================
+//  Spielautomat auf der Brust: Walzen drehen und landen auf 7-7-7
+// ============================================================
+function missCombo(loop) {
+  return [1 + mod(loop, 4), mod(loop * 3 + 2, SYMBOLS), mod(loop * 2 + 1, SYMBOLS)];
+}
+
+function spinTo(from, to, start, stop, lb, laps) {
+  if (lb <= start) return { p: from, spinning: false };
+  const dist = mod(to - from, SYMBOLS) + laps * SYMBOLS;
+  if (lb < stop) {
+    const u = (lb - start) / (stop - start);
+    const eased = u < 0.25 ? 2 * u * u : u - 0.125;   // sanft anlaufen, dann gleichmäßig
+    return { p: from + (dist * eased) / 0.875, spinning: u > 0.08 };
+  }
+  const k = lb - stop;
+  const settle = k < 0.5 ? -0.22 * Math.sin((Math.PI * k) / 0.5) * (1 - k / 0.5) : 0;   // kleiner Rückfedereffekt
+  return { p: from + dist + settle, spinning: false };
+}
+
+function slotState(beat) {
+  const lb = mod(beat, LOOP);
+  const loop = Math.floor(beat / LOOP);
+  const miss = missCombo(loop);
+  const reels = [], spinning = [];
+  for (let i = 0; i < 3; i++) {
+    let r;
+    if (lb < 19) r = spinTo(0, miss[i], 0, 1.2 + i * 0.4, lb, 2);
+    else r = spinTo(miss[i], 0, 19, 22 + i, lb, 5 + i * 2);
+    reels.push(r.p);
+    spinning.push(r.spinning);
+  }
+  const lever = lb > 18.4 && lb < 19.4 ? Math.sin((Math.PI * (lb - 18.4)) / 1.0) : 0;
+  const jackpot = lb >= 24;
+  return { reels, spinning, lever, jackpot, bulbPhase: Math.floor(beat * (jackpot ? 4 : 2)) };
+}
+
+// ============================================================
+//  Musik (eigener Beat mit der Web Audio API, startet erst per Klick)
+// ============================================================
+let ac = null, bus = null, master = null, leadBus = null, noiseBuf = null;
+let musicOn = false, nextStep = 0;
+const timing = { beat: 0, anchorTime: 0, anchorBeat: 0 };
+const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
+
+function initAudio() {
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = 0;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 4;
+  bus = ac.createGain(); bus.gain.value = 0.8;
+  bus.connect(comp).connect(master).connect(ac.destination);
+  leadBus = ac.createGain();
+  const delay = ac.createDelay(1); delay.delayTime.value = SPB * 0.75;
+  const fb = ac.createGain(); fb.gain.value = 0.28;
+  leadBus.connect(bus); leadBus.connect(delay); delay.connect(fb).connect(delay); delay.connect(bus);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+
+function env(t, peak, attack, decay) {
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  return g;
+}
+function kick(t) {
+  const o = ac.createOscillator();
+  o.frequency.setValueAtTime(165, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+  o.connect(env(t, 0.9, 0.002, 0.28)).connect(bus); o.start(t); o.stop(t + 0.32);
+}
+function noiseHit(t, type, freq, peak, decay, q = 1) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  s.connect(f).connect(env(t, peak, 0.001, decay)).connect(bus);
+  s.start(t, Math.random() * 0.5); s.stop(t + decay + 0.05);
+}
+function tone(t, midi, dur, type, peak, cutoff, dest = bus) {
+  const o = ac.createOscillator(); o.type = type; o.frequency.value = mtof(midi);
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+  o.connect(f).connect(env(t, peak, 0.005, dur)).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+}
+function bell(t, midi) {
+  for (const [ratio, amp] of [[1, 0.16], [2.76, 0.06], [5.4, 0.03]]) {
+    const o = ac.createOscillator(); o.frequency.value = mtof(midi) * ratio;
+    o.connect(env(t, amp, 0.003, 1.4)).connect(bus); o.start(t); o.stop(t + 1.5);
+  }
+}
+function coinSound(t) {
+  tone(t, 95, 0.07, 'square', 0.05, 8000);
+  tone(t + 0.07, 100, 0.3, 'square', 0.05, 8000);
+}
+
+// Akkorde pro Takt (8 Takte): Am F G E Am F | C (Jackpot!) G
+const BASS = [33, 29, 31, 28, 33, 29, 36, 31];
+const CHORDS = [[57, 60, 64], [57, 60, 65], [55, 59, 62], [56, 59, 64], [57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]];
+const _ = null;
+const MELODY = [
+  [69, _, 72, _, 76, _, 74, 72, _, 69, _, 72, 74, _, 76, _],
+  [77, _, 76, _, 74, _, 72, _, 74, _, 72, 69, _, _, 67, _],
+  [67, _, 71, _, 74, _, 79, _, 77, _, 74, _, 71, _, 74, _],
+  [76, _, 71, _, 68, _, 71, _, 76, 75, 76, _, 80, _, 83, _],
+  [69, _, 72, _, 76, _, 74, 72, _, 69, _, 72, 74, _, 76, _],
+  [65, 69, 72, 77, 69, 72, 77, 81, 72, 77, 81, 84, 77, 81, 84, 89],
+  [84, _, _, 84, 79, _, 84, _, 88, _, _, 86, 84, _, 79, _],
+  [83, _, 79, _, 86, _, 83, _, 91, _, 89, _, 86, _, 83, _],
+];
+
+function playStep(n, t) {
+  const lb = mod(n / 4, LOOP);
+  const bar = Math.floor(lb / 4);
+  const step = mod(n, 16);
+  const beatInLoop = Math.floor(lb);
+
+  if (step % 4 === 0 && beatInLoop !== 23) kick(t);
+  if (step === 4 || step === 12) { noiseHit(t, 'bandpass', 1400, 0.45, 0.15, 0.8); noiseHit(t + 0.012, 'bandpass', 1100, 0.3, 0.12, 0.8); }
+  if (step % 4 === 2) noiseHit(t, 'highpass', 7500, 0.16, 0.1);
+  else if (bar >= 6) noiseHit(t, 'highpass', 9000, 0.06, 0.03);
+  if (step % 2 === 0) tone(t, BASS[bar] + (step % 4 === 2 ? 12 : 0), SPB * 0.42, 'sawtooth', 0.22, 700);
+  if (step % 4 === 2) for (const m of CHORDS[bar]) tone(t, m, SPB * 0.28, 'sawtooth', 0.035, 2400);
+  const note = MELODY[bar][step];
+  if (note !== null) {
+    tone(t, note, SPB * 0.5, 'square', 0.055, 3200, leadBus);
+    tone(t, note + 12, SPB * 0.3, 'triangle', 0.035, 6000, leadBus);
+  }
+  if (lb >= 19 && lb < 24) noiseHit(t, 'bandpass', 3200, 0.12, 0.02, 5);   // Walzen-Rattern
+  if (n % (LOOP * 4) === 24 * 4) {                                           // Jackpot!
+    noiseHit(t, 'highpass', 4000, 0.35, 1.6);
+    bell(t, 84); bell(t + 0.12, 88); bell(t + 0.24, 91);
+  }
+  if (lb >= 24 && lb < 27 && step % 2 === 1) coinSound(t);
+}
+
+function scheduleAudio() {
+  if (!musicOn || paused || !ac) return;
+  const horizon = ac.currentTime + 0.12;
+  for (;;) {
+    const t = timing.anchorTime + (nextStep / 4 - timing.anchorBeat) * SPB;
+    if (t > horizon) break;
+    if (t >= ac.currentTime - 0.01) playStep(nextStep, Math.max(t, ac.currentTime));
+    nextStep++;
+  }
+}
+setInterval(scheduleAudio, 25);
+
+const musicBtn = document.getElementById('music');
+musicBtn.addEventListener('click', async () => {
+  if (!ac) initAudio();
+  if (!musicOn) {
+    await ac.resume();
+    timing.anchorTime = ac.currentTime;
+    timing.anchorBeat = timing.beat;
+    nextStep = Math.ceil(timing.beat * 4);
+    master.gain.cancelScheduledValues(ac.currentTime);
+    master.gain.setTargetAtTime(0.55, ac.currentTime, 0.05);
+    musicOn = true;
+    if (paused) ac.suspend();
+  } else {
+    musicOn = false;
+    master.gain.setTargetAtTime(0, ac.currentTime, 0.04);
+  }
+  musicBtn.textContent = musicOn ? '♪ Musik aus' : '♪ Musik an';
+  musicBtn.setAttribute('aria-pressed', String(musicOn));
+});
+
+let paused = false;
+const pauseBtn = document.getElementById('pause');
+function togglePause() {
+  paused = !paused;
+  if (ac && musicOn) paused ? ac.suspend() : ac.resume();
+  pauseBtn.textContent = paused ? '▶ Weiter' : '❚❚ Pause';
+  pauseBtn.setAttribute('aria-pressed', String(paused));
+}
+pauseBtn.addEventListener('click', togglePause);
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  if (e.code === 'KeyM') musicBtn.click();
+});
+
+// ============================================================
+//  Hauptschleife
+// ============================================================
+const jackpotEl = document.getElementById('jackpot');
+let lastLoopBeat = 0;
+let coinRain = 0;
+let last = performance.now();
+let time = 0;
+const tmp = new THREE.Vector3();
+
+function onJackpot() {
+  jackpotEl.classList.remove('hide');
+  void jackpotEl.offsetWidth;
+  jackpotEl.classList.add('show');
+  // Münzfontäne aus dem Spielautomaten
+  const origin = new THREE.Vector3(0, 0.9, 0.6);
+  chest.localToWorld(origin);
+  for (let i = 0; i < 46; i++) {
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    spawnCoin(origin.x + dir * 0.6, origin.y, origin.z, dir * (2 + Math.random() * 4), 6 + Math.random() * 6, -1 + Math.random() * 2.5);
+  }
+  coinRain = 3.5;
+}
+
+function update(dt) {
+  const beat = timing.beat;
+  const lb = mod(beat, LOOP);
+
+  applyPose(danceAt(beat));
+  drawTorso(slotState(beat));
+
+  if (lb >= 24 && lastLoopBeat < 24) onJackpot();
+  if (lb < lastLoopBeat && jackpotEl.classList.contains('show')) {
+    jackpotEl.classList.remove('show');
+    jackpotEl.classList.add('hide');
+  }
+  if (lb >= 31 && jackpotEl.classList.contains('show')) {
+    jackpotEl.classList.remove('show');
+    jackpotEl.classList.add('hide');
+  }
+  lastLoopBeat = lb;
+
+  // Beat-Puls für Licht und Neon
+  const pulse = Math.exp(-mod(beat, 1) * 5);
+  const jackpotGlow = smoothstep(23.8, 24.2, lb) * (1 - smoothstep(31, 32, lb));
+  rimPink.intensity = 0.7 + 1.0 * pulse + 0.8 * jackpotGlow;
+  rimCyan.intensity = 0.7 + 1.0 * pulse + 0.8 * jackpotGlow;
+  signMat.color.setScalar(1.6 + 0.6 * pulse + (jackpotGlow > 0 && Math.floor(beat * 4) % 2 ? 0.7 : 0));
+  ring.material.opacity = 0.45 + 0.5 * pulse;
+  floorGlow.material.opacity = 0.18 + 0.2 * pulse + 0.25 * jackpotGlow;
+  floorGlow.material.color.set(jackpotGlow > 0.5 ? '#ffd23a' : '#3fd6ff');
+  wallRoulette.rotation.z -= dt * (0.6 + 3 * jackpotGlow);
+  wristRoulette.rotation.y += dt * 2.5;
+
+  // Ballons folgen der Hand (gedämpfte Feder)
+  armR.elbow.localToWorld(handPos.set(-0.1, -1.0, 0.25));
+  for (const b of balloons) {
+    tmp.copy(handPos).add(b.offset);
+    tmp.x += Math.sin(time * 1.3 + b.offset.x * 3) * 0.12;
+    if (!b.init) { b.mesh.position.copy(tmp); b.init = true; }
+    b.vel.addScaledVector(tmp.sub(b.mesh.position), 18 * dt);
+    b.vel.multiplyScalar(Math.exp(-4.5 * dt));
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.mesh.rotation.z = -b.vel.x * 0.08;
+    const pos = b.line.geometry.attributes.position;
+    pos.setXYZ(0, handPos.x, handPos.y, handPos.z);
+    pos.setXYZ(1, b.mesh.position.x, b.mesh.position.y - 0.5, b.mesh.position.z);
+    pos.needsUpdate = true;
+  }
+
+  // Konfetti
+  for (let i = 0; i < confetti.length; i++) {
+    const c = confetti[i];
+    c.p.y -= c.fall * dt * (1 + jackpotGlow);
+    c.p.x += Math.sin(time * 1.7 + c.phase) * dt * 0.4;
+    if (c.p.y < 0.02) c.p.set((Math.random() - 0.5) * 22, 13 + Math.random() * 2, -8 + Math.random() * 15);
+    c.r.x += c.spin.x * dt; c.r.y += c.spin.y * dt; c.r.z += c.spin.z * dt;
+    dummy.position.copy(c.p); dummy.rotation.copy(c.r); dummy.scale.setScalar(1);
+    dummy.updateMatrix();
+    confettiMesh.setMatrixAt(i, dummy.matrix);
+  }
+  confettiMesh.instanceMatrix.needsUpdate = true;
+
+  // Münzen: Regen und Physik
+  if (coinRain > 0) {
+    coinRain -= dt;
+    for (let k = 0; k < 2; k++) {
+      if (Math.random() < 0.5) spawnCoin((Math.random() - 0.5) * 12, 12, -4 + Math.random() * 8, 0, -2, 0);
+    }
+  }
+  for (let i = coins.length - 1; i >= 0; i--) {
+    const c = coins[i];
+    c.life += dt;
+    c.v.y -= 18 * dt;
+    c.p.addScaledVector(c.v, dt);
+    if (c.p.y < 0.03) {
+      c.p.y = 0.03;
+      c.v.y *= -0.35; c.v.x *= 0.7; c.v.z *= 0.7;
+      c.spin.multiplyScalar(0.6);
+      c.r.x += (0 - c.r.x) * 0.3;
+    }
+    c.r.x += c.spin.x * dt; c.r.y += c.spin.y * dt;
+    if (c.life > 6) coins.splice(i, 1);
+  }
+  coins.forEach((c, i) => {
+    dummy.position.copy(c.p); dummy.rotation.copy(c.r);
+    dummy.scale.setScalar(c.life > 5 ? Math.max(0.001, 6 - c.life) : 1);
+    dummy.updateMatrix();
+    coinMesh.setMatrixAt(i, dummy.matrix);
+  });
+  coinMesh.count = coins.length;
+  coinMesh.instanceMatrix.needsUpdate = true;
+
+  // Jackpot-Aura
+  auraMat.opacity = jackpotGlow * 0.9;
+  if (jackpotGlow > 0) {
+    for (let i = 0; i < AURA; i++) {
+      const a = aura[i];
+      a.y += a.speed * dt;
+      a.a += dt * 0.8;
+      if (a.y > 7.5) a.y = 0;
+      auraPos[i * 3] = pelvis.position.x + Math.cos(a.a) * a.r;
+      auraPos[i * 3 + 1] = a.y;
+      auraPos[i * 3 + 2] = Math.sin(a.a) * a.r;
+    }
+    auraGeo.attributes.position.needsUpdate = true;
+  }
+}
+
+// Kamera schwenkt sanft, solange niemand sie bewegt
+const sph = new THREE.Spherical();
+function idleCamera(dt) {
+  if (performance.now() - lastInteraction < 4000) return;
+  sph.setFromVector3(tmp.copy(camera.position).sub(controls.target));
+  const k = 1 - Math.exp(-0.8 * dt);
+  sph.theta += (CAM_AZ + 0.28 * Math.sin(time * 0.17) - sph.theta) * k;
+  sph.phi += (Math.PI / 2 - CAM_EL - 0.04 * Math.sin(time * 0.11) - sph.phi) * k;
+  sph.radius += (camDist - sph.radius) * k;
+  camera.position.setFromSpherical(sph).add(controls.target);
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  time += dt;
+  if (!paused) {
+    if (musicOn && ac) timing.beat = timing.anchorBeat + (ac.currentTime - timing.anchorTime) / SPB;
+    else timing.beat += dt / SPB;
+    update(dt);
+  }
+  idleCamera(dt);
+  controls.update();
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloom.setSize(w, h);
+  fitCamera();
+});
+
+// Zum Ausprobieren in der Browser-Konsole, z. B. crazyGambler.timing.beat = 24
+window.crazyGambler = { timing, camera, controls };
+window.__sceneReady = true;
+document.getElementById('error').hidden = true;
+requestAnimationFrame(frame);
+</script>
+<script>
+  setTimeout(() => {
+    if (!window.__sceneReady) document.getElementById('error').hidden = false;
+  }, 12000);
+</script>
+</body>
+</html>
