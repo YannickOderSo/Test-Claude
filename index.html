@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galaxie</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #03040c; overflow: hidden; }
+  body { font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: rgba(220, 226, 255, 0.8); }
+
+  canvas { position: fixed; inset: 0; display: block; touch-action: none; cursor: crosshair; }
+
+  .hint {
+    position: fixed; left: 16px; right: 16px; bottom: 24px;
+    text-align: center; letter-spacing: 0.06em; pointer-events: none;
+    transition: opacity 1.5s ease;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .btn {
+    position: fixed; top: 16px; right: 16px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid rgba(180, 190, 255, 0.25);
+    background: rgba(20, 24, 48, 0.45); backdrop-filter: blur(6px);
+    color: inherit; font: inherit; letter-spacing: 0.05em; cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .btn:hover { background: rgba(40, 48, 96, 0.6); border-color: rgba(180, 190, 255, 0.5); }
+  .btn:focus-visible { outline: 2px solid #9fb0ff; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<button class="btn" id="newGalaxy" type="button">✦ Neue Galaxie</button>
+<p class="hint" id="hint"></p>
+
+<script>
+// ============================================================
+//  Einstellungen – hier kannst du herumspielen
+// ============================================================
+const CONFIG = {
+  arms: 3,              // Anzahl der Spiralarme
+  density: 1,           // Partikelmenge (0.5 = halb so viele, 2 = doppelt so viele)
+  rotationSpeed: 0.12,  // Drehgeschwindigkeit in Radiant pro Sekunde
+  twist: 5.2,           // wie stark sich die Arme eindrehen
+  innerHue: 38,         // Farbton im Kern (0–360, 38 = Gold)
+  outerHue: 255,        // Farbton am Rand (255 = Blauviolett)
+  trail: 0.22,          // Nachzieh-Effekt: kleiner = längere Leuchtspuren
+  mouseRadius: 160,     // Wirkungsradius der Maus in Pixeln
+  supernovae: true,     // zufällige kleine Explosionen in den Armen
+};
+
+// Farbpaletten für „Neue Galaxie“
+const PALETTES = [
+  { innerHue: 38,  outerHue: 255 },  // Gold → Blauviolett
+  { innerHue: 330, outerHue: 190 },  // Pink → Türkis
+  { innerHue: 50,  outerHue: 160 },  // Gelb → Smaragd
+  { innerHue: 15,  outerHue: 290 },  // Orange → Magenta
+  { innerHue: 200, outerHue: 275 },  // Eisblau → Lila
+];
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+const SPEED = reducedMotion ? 0.25 : 1;
+
+// ============================================================
+//  Canvas & Größe
+// ============================================================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, cx = 0, cy = 0, R = 0;
+let baseTilt = 0.52; // Blickwinkel: 1 = von oben, kleiner = flacher
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2;
+  cy = H / 2;
+  R = Math.min(W * 0.45, H * 0.7);
+  baseTilt = H > W ? 0.72 : 0.52; // im Hochformat steiler draufschauen
+  ctx.fillStyle = '#03040c';
+  ctx.fillRect(0, 0, W, H);
+  createStars();
+}
+
+// ============================================================
+//  Leucht-Sprites: ein vorgerenderter Glühpunkt pro Farbton
+// ============================================================
+const HUE_STEPS = 72;
+const SPRITE_SIZE = 32;
+const sprites = [];
+
+for (let i = 0; i < HUE_STEPS; i++) {
+  const c = document.createElement('canvas');
+  c.width = c.height = SPRITE_SIZE;
+  const g = c.getContext('2d');
+  const h = (i * 360) / HUE_STEPS;
+  const half = SPRITE_SIZE / 2;
+  const grad = g.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, `hsla(${h}, 100%, 94%, 1)`);
+  grad.addColorStop(0.15, `hsla(${h}, 100%, 72%, 0.9)`);
+  grad.addColorStop(0.4, `hsla(${h}, 100%, 56%, 0.25)`);
+  grad.addColorStop(1, `hsla(${h}, 100%, 50%, 0)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+  sprites.push(c);
+}
+
+function spriteFor(hue) {
+  const h = ((hue % 360) + 360) % 360;
+  return sprites[Math.round((h / 360) * HUE_STEPS) % HUE_STEPS];
+}
+
+// Normalverteilte Zufallszahl (Box-Muller)
+function gauss() {
+  let u = 0;
+  while (u === 0) u = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+// ============================================================
+//  Galaxie aus Partikeln
+// ============================================================
+const particles = [];
+
+function createGalaxy() {
+  particles.length = 0;
+  const count = Math.round(Math.min(4000, Math.max(1200, (W * H) / 450)) * CONFIG.density);
+
+  for (let i = 0; i < count; i++) {
+    const inBulge = Math.random() < 0.2;
+    let r, a, z;
+
+    if (inBulge) {
+      // Kugelförmiger, dichter Kern
+      r = Math.abs(gauss()) * 0.11;
+      a = Math.random() * Math.PI * 2;
+      z = gauss() * 0.05;
+    } else {
+      // Spiralarme: Winkel wächst mit dem Radius, dazu etwas Streuung
+      const arm = i % CONFIG.arms;
+      r = 0.07 + Math.pow(Math.random(), 0.85) * 0.95;
+      a = (arm / CONFIG.arms) * Math.PI * 2 - r * CONFIG.twist + gauss() * 0.3 * (1.15 - r * 0.6);
+      r += gauss() * 0.025;
+      z = gauss() * 0.012;
+    }
+
+    // Innen überwiegen alte (warme) Sterne, außen junge (kühle) – gemischt statt Farbverlauf
+    const t = Math.min(1, Math.max(0, r));
+    const outerChance = Math.min(1, Math.max(0, (t - 0.05) / 0.55));
+    const special = Math.random();
+    let hue = (Math.random() < outerChance ? CONFIG.outerHue : CONFIG.innerHue) + gauss() * 10;
+    let size = 0.5 + Math.random() * 1.1;
+    let alpha = inBulge ? 0.12 + Math.random() * 0.2 : 0.25 + Math.random() * 0.45;
+
+    if (!inBulge && special < 0.035) {
+      // Rosa Sternentstehungsgebiete
+      hue = 325 + gauss() * 10;
+      size *= 1.8;
+      alpha = 0.6;
+    } else if (special > 0.975) {
+      // Einzelne helle Sterne
+      size *= 2.2;
+      alpha = 0.85;
+    }
+
+    particles.push({
+      r, a, z, hue, size, alpha,
+      spin: inBulge ? CONFIG.rotationSpeed * (1.5 + Math.random()) : CONFIG.rotationSpeed,
+      epPhase: Math.random() * Math.PI * 2,         // kleine Kreisbewegung um die Ruheposition
+      epRadius: 0.003 + Math.random() * 0.012,
+      epSpeed: 0.3 + Math.random() * 0.8,
+      twinkle: Math.random() * Math.PI * 2,
+      inBulge,
+      dx: 0, dy: 0, vx: 0, vy: 0,                     // Auslenkung durch Maus/Schockwellen
+      sx: 0, sy: 0,                                   // aktuelle Bildschirmposition
+    });
+  }
+}
+
+// Hintergrundsterne
+const stars = [];
+function createStars() {
+  stars.length = 0;
+  const n = Math.round((W * H) / 4500);
+  for (let i = 0; i < n; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      s: 0.4 + Math.random() * 1.1,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 2,
+    });
+  }
+}
+
+// ============================================================
+//  Interaktion: Maus/Touch, Schockwellen, Funken
+// ============================================================
+const pointer = { x: 0, y: 0, active: false };
+const waves = [];
+const sparks = [];
+
+function spawnBurst(x, y, strength) {
+  waves.push({
+    x, y, r: 0, age: 0,
+    life: 2.2,
+    power: 2600 * strength,
+    hue: 180 + Math.random() * 140,
+  });
+  const n = Math.round(70 * strength);
+  for (let i = 0; i < n && sparks.length < 1500; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = (80 + Math.random() * 420) * (0.6 + strength * 0.4);
+    sparks.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      life: 1,
+      decay: 0.45 + Math.random() * 0.7,
+      hue: Math.random() < 0.5 ? 30 + Math.random() * 30 : 190 + Math.random() * 90,
+      size: 1 + Math.random() * 2,
+    });
+  }
+}
+
+canvas.addEventListener('pointermove', (e) => {
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.active = true;
+});
+canvas.addEventListener('pointerdown', (e) => {
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.active = true;
+  spawnBurst(e.clientX, e.clientY, 1);
+  hideHint();
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (e.pointerType !== 'mouse') pointer.active = false;
+});
+canvas.addEventListener('pointerleave', () => { pointer.active = false; });
+canvas.addEventListener('pointercancel', () => { pointer.active = false; });
+
+// ============================================================
+//  Steuerung & Hinweistext
+// ============================================================
+const hint = document.getElementById('hint');
+const HINT_TEXT = coarsePointer
+  ? 'Wischen verdrängt die Sterne · Tippen löst eine Schockwelle aus'
+  : 'Maus bewegen · Klicken = Schockwelle · Leertaste = Pause · N = neue Galaxie';
+hint.textContent = HINT_TEXT;
+let hintTimer = setTimeout(hideHint, 7000);
+
+function hideHint() {
+  clearTimeout(hintTimer);
+  hint.classList.add('hidden');
+}
+
+let paused = false;
+
+function newGalaxy() {
+  const palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+  CONFIG.innerHue = palette.innerHue;
+  CONFIG.outerHue = palette.outerHue;
+  CONFIG.arms = 2 + Math.floor(Math.random() * 4);
+  CONFIG.twist = 3.5 + Math.random() * 3.5;
+  createGalaxy();
+  spawnBurst(cx, cy, 1.6);
+}
+
+document.getElementById('newGalaxy').addEventListener('click', newGalaxy);
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paused = !paused;
+    hint.textContent = paused ? 'Pausiert – Leertaste zum Fortsetzen' : HINT_TEXT;
+    hint.classList.toggle('hidden', !paused);
+  } else if (e.code === 'KeyN') {
+    newGalaxy();
+  }
+});
+
+window.addEventListener('resize', resize);
+
+// ============================================================
+//  Animationsschleife
+// ============================================================
+const SPRING = 6;     // wie stark Partikel zurückfedern
+const DAMPING = 2.4;  // wie schnell die Bewegung abklingt
+let time = 0;
+let last = performance.now();
+let nextSupernova = 3;
+
+function update(dt) {
+  time += dt;
+
+  // Die Galaxie „atmet“ leicht: Neigung schwankt langsam
+  const tilt = baseTilt + 0.07 * Math.sin(time * 0.07);
+  const depthOffset = Math.sqrt(1 - tilt * tilt) * R;
+  const view = -0.35; // Drehung der Hauptachse auf dem Bildschirm
+  const cosV = Math.cos(view), sinV = Math.sin(view);
+
+  const mr = CONFIG.mouseRadius;
+  const mr2 = mr * mr;
+  const damp = Math.exp(-DAMPING * dt);
+
+  // Schockwellen wachsen
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i];
+    w.age += dt;
+    w.r += 520 * dt;
+    if (w.age > w.life) waves.splice(i, 1);
+  }
+
+  for (const p of particles) {
+    // Ruheposition auf der Umlaufbahn
+    const ang = p.a + p.spin * time;
+    const ep = p.epPhase + p.epSpeed * time;
+    const rr = (p.r + p.epRadius * Math.cos(ep)) * R;
+    const X = Math.cos(ang) * rr;
+    const Y = Math.sin(ang) * rr * tilt + p.z * depthOffset;
+    const hx = cx + X * cosV - Y * sinV;
+    const hy = cy + X * sinV + Y * cosV;
+
+    let px = hx + p.dx;
+    let py = hy + p.dy;
+
+    // Maus: Sterne werden weggedrückt und leicht verwirbelt
+    if (pointer.active) {
+      const ddx = px - pointer.x;
+      const ddy = py - pointer.y;
+      const d2 = ddx * ddx + ddy * ddy;
+      if (d2 < mr2 && d2 > 0.01) {
+        const d = Math.sqrt(d2);
+        const f = 1 - d / mr;
+        const nx = ddx / d, ny = ddy / d;
+        p.vx += (nx * 900 - ny * 450) * f * dt;
+        p.vy += (ny * 900 + nx * 450) * f * dt;
+      }
+    }
+
+    // Schockwellen schieben Partikel nach außen
+    for (const w of waves) {
+      const ddx = px - w.x;
+      const ddy = py - w.y;
+      const d = Math.sqrt(ddx * ddx + ddy * ddy);
+      const band = Math.abs(d - w.r);
+      if (band < 45 && d > 0.1) {
+        const f = (1 - band / 45) * w.power * (1 - w.age / w.life);
+        p.vx += (ddx / d) * f * dt;
+        p.vy += (ddy / d) * f * dt;
+      }
+    }
+
+    // Federkraft zurück zur Umlaufbahn
+    p.vx = (p.vx - p.dx * SPRING * dt) * damp;
+    p.vy = (p.vy - p.dy * SPRING * dt) * damp;
+    p.dx += p.vx * dt;
+    p.dy += p.vy * dt;
+
+    p.sx = hx + p.dx;
+    p.sy = hy + p.dy;
+    p.depth = 1 + 0.12 * (Math.sin(ang) * rr) / R;
+  }
+
+  // Funken fliegen und verglühen
+  const sparkDrag = Math.exp(-1.8 * dt);
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.vx *= sparkDrag;
+    s.vy *= sparkDrag;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.life -= s.decay * dt;
+    if (s.life <= 0) sparks.splice(i, 1);
+  }
+
+  // Ab und zu eine kleine Supernova in einem Spiralarm
+  if (CONFIG.supernovae && !reducedMotion) {
+    nextSupernova -= dt;
+    if (nextSupernova <= 0) {
+      nextSupernova = 5 + Math.random() * 5;
+      const candidates = particles.filter((p) => !p.inBulge && p.r > 0.3);
+      const p = candidates[Math.floor(Math.random() * candidates.length)];
+      if (p) spawnBurst(p.sx, p.sy, 0.45);
+    }
+  }
+}
+
+function draw() {
+  // Halbtransparentes Übermalen erzeugt die Leuchtspuren
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = `rgba(3, 4, 12, ${CONFIG.trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ab hier addieren sich Farben – überlappendes Licht wird heller
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Hintergrundsterne funkeln
+  ctx.fillStyle = '#cdd6ff';
+  for (const s of stars) {
+    ctx.globalAlpha = 0.03 + 0.07 * (0.5 + 0.5 * Math.sin(time * s.speed + s.phase));
+    ctx.fillRect(s.x, s.y, s.s, s.s);
+  }
+
+  // Warmes Leuchten im Zentrum
+  const tilt = baseTilt + 0.07 * Math.sin(time * 0.07);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.35);
+  ctx.scale(1, tilt * 1.3);
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.4);
+  const coreHue = CONFIG.innerHue;
+  glow.addColorStop(0, `hsla(${coreHue}, 100%, 80%, 0.06)`);
+  glow.addColorStop(0.35, `hsla(${coreHue}, 100%, 60%, 0.02)`);
+  glow.addColorStop(1, `hsla(${coreHue}, 100%, 50%, 0)`);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Galaxie-Partikel
+  const hueShift = 20 * Math.sin(time * 0.05);
+  for (const p of particles) {
+    const tw = 0.75 + 0.25 * Math.sin(time * 2.2 + p.twinkle);
+    const speed = Math.abs(p.vx) + Math.abs(p.vy);
+    const size = p.size * p.depth * 6;
+    ctx.globalAlpha = Math.min(1, p.alpha * tw + speed / 900);
+    ctx.drawImage(spriteFor(p.hue + hueShift), p.sx - size / 2, p.sy - size / 2, size, size);
+  }
+
+  // Schockwellen-Ringe
+  ctx.lineWidth = 1.5;
+  for (const w of waves) {
+    const fade = 1 - w.age / w.life;
+    ctx.globalAlpha = 0.35 * fade * Math.min(1, w.power / 2600);
+    ctx.strokeStyle = `hsl(${w.hue}, 100%, 72%)`;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Funken
+  for (const s of sparks) {
+    const size = s.size * (2 + 7 * s.life);
+    ctx.globalAlpha = Math.max(0, s.life);
+    ctx.drawImage(spriteFor(s.hue), s.x - size / 2, s.y - size / 2, size, size);
+  }
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000) * SPEED;
+  last = now;
+  if (!paused) {
+    update(dt);
+    draw();
+  }
+  requestAnimationFrame(frame);
+}
+
+resize();
+createGalaxy();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
